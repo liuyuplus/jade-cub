@@ -309,6 +309,10 @@ enum MascotKind: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var successColor: Color {
+        Color(red: 0.35, green: 0.82, blue: 0.45)
+    }
+
     nonisolated init(client: MascotClient) {
         self = client.defaultMascotKind
     }
@@ -334,7 +338,9 @@ extension SessionState {
 
 extension MascotStatus {
     init(session: SessionState) {
-        if session.needsManualAttention {
+        if SessionCompletionStateEvaluator.isCompletedReadySession(session) {
+            self = .completed
+        } else if session.needsManualAttention {
             self = .warning
         } else if session.phase.isActive {
             self = .working
@@ -344,25 +350,38 @@ extension MascotStatus {
     }
 }
 
+enum CodexMascotExpression: Sendable, Equatable {
+    case automatic
+    case music
+}
+
 struct MascotView: View {
     let kind: MascotKind
     let status: MascotStatus
     var size: CGFloat = 40
     var animationTime: TimeInterval?
     var isDragging: Bool = false
+    var showsIdleSleepOverlay: Bool = true
+    var codexExpression: CodexMascotExpression = .automatic
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         kind: MascotKind,
         status: MascotStatus,
         size: CGFloat = 40,
         animationTime: TimeInterval? = nil,
-        isDragging: Bool = false
+        isDragging: Bool = false,
+        showsIdleSleepOverlay: Bool = true,
+        codexExpression: CodexMascotExpression = .automatic
     ) {
         self.kind = kind
         self.status = status
         self.size = size
         self.animationTime = animationTime
         self.isDragging = isDragging
+        self.showsIdleSleepOverlay = showsIdleSleepOverlay
+        self.codexExpression = codexExpression
     }
 
     init(
@@ -370,31 +389,50 @@ struct MascotView: View {
         status: MascotStatus,
         size: CGFloat = 40,
         animationTime: TimeInterval? = nil,
-        isDragging: Bool = false
+        isDragging: Bool = false,
+        showsIdleSleepOverlay: Bool = true,
+        codexExpression: CodexMascotExpression = .automatic
     ) {
         self.init(
             kind: MascotKind(provider: provider),
             status: status,
             size: size,
             animationTime: animationTime,
-            isDragging: isDragging
+            isDragging: isDragging,
+            showsIdleSleepOverlay: showsIdleSleepOverlay,
+            codexExpression: codexExpression
         )
     }
 
     var body: some View {
-        ZStack {
-            if isDragging || status == .dragging {
-                draggingScene(time: animationTime)
+        Group {
+            if kind == .codex {
+                CodexMintBearMascotView(
+                    status: status,
+                    size: size,
+                    animationTime: animationTime,
+                    isDragging: isDragging,
+                    showsIdleSleepOverlay: showsIdleSleepOverlay,
+                    expression: codexExpression
+                )
             } else {
-                switch status {
-                case .idle:
-                    idleScene(time: animationTime)
-                case .working:
-                    workingScene(time: animationTime)
-                case .warning:
-                    warningScene(time: animationTime)
-                case .dragging:
-                    draggingScene(time: animationTime)
+                ZStack {
+                    if isDragging || status == .dragging {
+                        draggingScene(time: animationTime)
+                    } else {
+                        switch status {
+                        case .idle:
+                            idleScene(time: animationTime)
+                        case .working:
+                            workingScene(time: animationTime)
+                        case .completed:
+                            completedScene(time: animationTime)
+                        case .warning:
+                            warningScene(time: animationTime)
+                        case .dragging:
+                            draggingScene(time: animationTime)
+                        }
+                    }
                 }
             }
         }
@@ -404,27 +442,71 @@ struct MascotView: View {
     }
 
     private func idleScene(time: TimeInterval?) -> some View {
-        ZStack(alignment: .topTrailing) {
-            canvasScene(interval: adaptiveInterval(for: .idle), mode: .idle, time: time)
-            FloatingZOverlay(size: size, time: time)
+        let effectiveTime = effectiveSceneTime(for: .idle, explicitTime: time)
+
+        return ZStack(alignment: .topTrailing) {
+            canvasScene(interval: adaptiveInterval(for: .idle), mode: .idle, time: effectiveTime)
+            if showsIdleSleepOverlay && !reduceMotion {
+                FloatingZOverlay(size: size, time: effectiveTime)
+            }
         }
     }
 
     private func workingScene(time: TimeInterval?) -> some View {
-        canvasScene(interval: adaptiveInterval(for: .working), mode: .working, time: time)
+        canvasScene(
+            interval: adaptiveInterval(for: .working),
+            mode: .working,
+            time: effectiveSceneTime(for: .working, explicitTime: time)
+        )
+    }
+
+    private func completedScene(time: TimeInterval?) -> some View {
+        canvasScene(
+            interval: adaptiveInterval(for: .completed),
+            mode: .completed,
+            time: effectiveSceneTime(for: .completed, explicitTime: time)
+        )
     }
 
     private func warningScene(time: TimeInterval?) -> some View {
-        ZStack {
-            AlertHalo(tint: kind.alertColor, size: size, time: time)
-            canvasScene(interval: adaptiveInterval(for: .warning), mode: .warning, time: time)
+        let effectiveTime = effectiveSceneTime(for: .warning, explicitTime: time)
+
+        return ZStack {
+            AlertHalo(tint: kind.alertColor, size: size, time: effectiveTime)
+            canvasScene(interval: adaptiveInterval(for: .warning), mode: .warning, time: effectiveTime)
         }
     }
 
     private func draggingScene(time: TimeInterval?) -> some View {
-        ZStack {
-            DragMotionOverlay(size: size, time: time)
-            canvasScene(interval: adaptiveInterval(for: .dragging), mode: .dragging, time: time)
+        let effectiveTime = effectiveSceneTime(for: .dragging, explicitTime: time)
+
+        return ZStack {
+            if !reduceMotion {
+                DragMotionOverlay(size: size, time: effectiveTime)
+            }
+            canvasScene(interval: adaptiveInterval(for: .dragging), mode: .dragging, time: effectiveTime)
+        }
+    }
+
+    private func effectiveSceneTime(for mode: MascotRenderMode, explicitTime: TimeInterval?) -> TimeInterval? {
+        if let explicitTime {
+            return explicitTime
+        }
+        return reduceMotion ? reducedMotionTime(for: mode) : nil
+    }
+
+    private func reducedMotionTime(for mode: MascotRenderMode) -> TimeInterval {
+        switch mode {
+        case .idle:
+            return 0
+        case .working:
+            return 0.35
+        case .completed:
+            return 2.2
+        case .warning:
+            return 1.8
+        case .dragging:
+            return 0.4
         }
     }
 
@@ -444,9 +526,14 @@ struct MascotView: View {
         // Higher interval = lower FPS for better battery/thermal performance
         switch mode {
         case .idle:
+            if codexExpression == .music {
+                return 0.05   // 20 FPS for the tiny music sway
+            }
             return 0.10  // 10 FPS for idle (slow animation, maximum battery savings)
         case .working:
             return 0.033  // ~30 FPS for working state (smooth but efficient)
+        case .completed:
+            return 0.05   // 20 FPS for a short celebratory bounce
         case .warning:
             return 0.04   // 25 FPS for warning (noticeable but not excessive)
         case .dragging:
@@ -616,7 +703,9 @@ struct MascotView: View {
         context.fill(Path(space.rect(5.1 + motion.shake, 13.7 + motion.vertical, 0.9, 1.1)), with: .color(dark))
         context.fill(Path(space.rect(9.6 + motion.shake, 13.7 + motion.vertical, 0.9, 1.1)), with: .color(dark))
 
-        if mode == .idle {
+        if mode == .idle, codexExpression == .music {
+            drawCodexMusicFace(in: context, space: space, motion: motion, color: prompt)
+        } else if mode == .idle {
             context.fill(Path(space.rect(6.7 + motion.shake, 11.0 + motion.vertical, 2.2, 0.6)), with: .color(prompt.opacity(0.32)))
         } else {
             context.fill(Path(space.rect(5.3 + motion.shake, 9.0 + motion.vertical, 0.9, 0.9)), with: .color(prompt))
@@ -630,6 +719,29 @@ struct MascotView: View {
         if mode == .warning {
             drawAlertGlyph(in: context, space: space, x: 11.7 + motion.shake, y: 2.2, color: kind.alertColor)
         }
+    }
+
+    private func drawCodexMusicFace(
+        in context: GraphicsContext,
+        space: PixelSpace,
+        motion: MascotMotion,
+        color: Color
+    ) {
+        let x = motion.shake
+        let y = motion.vertical
+
+        // >u<, kept deliberately tiny so the Codex cloud silhouette stays unchanged.
+        context.fill(Path(space.rect(4.9 + x, 9.2 + y, 0.75, 0.75)), with: .color(color))
+        context.fill(Path(space.rect(5.65 + x, 9.95 + y, 0.75, 0.75)), with: .color(color))
+        context.fill(Path(space.rect(4.9 + x, 10.7 + y, 0.75, 0.75)), with: .color(color))
+
+        context.fill(Path(space.rect(7.35 + x, 9.95 + y, 0.55, 0.8)), with: .color(color.opacity(0.9)))
+        context.fill(Path(space.rect(9.0 + x, 9.95 + y, 0.55, 0.8)), with: .color(color.opacity(0.9)))
+        context.fill(Path(space.rect(7.75 + x, 10.75 + y, 1.35, 0.55)), with: .color(color.opacity(0.9)))
+
+        context.fill(Path(space.rect(11.35 + x, 9.2 + y, 0.75, 0.75)), with: .color(color))
+        context.fill(Path(space.rect(10.6 + x, 9.95 + y, 0.75, 0.75)), with: .color(color))
+        context.fill(Path(space.rect(11.35 + x, 10.7 + y, 0.75, 0.75)), with: .color(color))
     }
 
     private func drawCursor(
@@ -1239,7 +1351,7 @@ struct MascotView: View {
             wingLift = CGFloat(sin(time * 1.8) * 0.18)
             tailWag = CGFloat(sin(time * 1.5) * 0.16)
             headBob = 0
-        case .working:
+        case .working, .completed:
             wingLift = -0.55 + flapPhase * 0.95
             tailWag = CGFloat(sin(time * 9.0) * 0.38)
             headBob = CGFloat(sin(time * 9.0) * 0.16)
@@ -1662,7 +1774,7 @@ struct MascotView: View {
             eyeHeight = 0.4
         case .warning:
             eyeHeight = 1.0
-        case .working:
+        case .working, .completed:
             eyeHeight = blinkHeight(time: time, closedHeight: 0.2, openHeight: 1.0)
         case .dragging:
             eyeHeight = 0.75
@@ -1684,6 +1796,19 @@ struct MascotView: View {
     private func motionValues(for mode: MascotRenderMode, time: TimeInterval) -> MascotMotion {
         switch mode {
         case .idle:
+            if codexExpression == .music {
+                let horizontal = CGFloat(sin(time * 2.9) * 0.46 + sin(time * 5.1 + 0.8) * 0.16)
+                let vertical = CGFloat(sin(time * 3.6 + 0.4) * 0.74 + sin(time * 6.2) * 0.18)
+                let squash = CGFloat(sin(time * 3.6 + 1.1) * 0.025)
+                return MascotMotion(
+                    vertical: vertical,
+                    bounce: vertical,
+                    shake: horizontal,
+                    squashX: 1.0 + squash,
+                    squashY: 1.0 - squash * 0.72
+                )
+            }
+
             return MascotMotion(
                 vertical: CGFloat(sin(time * 1.8) * 0.6),
                 bounce: 0,
@@ -1692,7 +1817,7 @@ struct MascotView: View {
                 squashY: 1
             )
         case .working:
-            let bounce = CGFloat(sin(time * .pi * 5) * 0.9)
+            let bounce = CGFloat(sin(time * .pi * 2.2) * 0.42)
             return MascotMotion(
                 vertical: bounce,
                 bounce: bounce,
@@ -1700,19 +1825,35 @@ struct MascotView: View {
                 squashX: 1,
                 squashY: 1
             )
-        case .warning:
-            let cycle = time.truncatingRemainder(dividingBy: 1.2)
-            let pct = CGFloat(cycle / 1.2)
-            let jump = lerp(
-                [(0, 0), (0.10, -0.8), (0.18, -4.8), (0.28, 1.0), (0.36, -2.2), (0.50, 0.4), (1, 0)],
+        case .completed:
+            let cycle = time.truncatingRemainder(dividingBy: 3.4)
+            let pct = CGFloat(cycle / 3.4)
+            let bounce = lerp(
+                [(0, 0), (0.10, -2.8), (0.22, 0.8), (0.34, -1.2), (0.48, 0), (1, 0)],
                 at: pct
             )
-            let shake = pct < 0.55 ? CGFloat(sin(time * 42) * 0.55) : 0
-            let squashX: CGFloat = jump > 0.4 ? 1.06 : 1.0
-            let squashY: CGFloat = jump > 0.4 ? 0.95 : 1.0
+            let squashX: CGFloat = pct > 0.12 && pct < 0.26 ? 1.05 : 1.0
+            let squashY: CGFloat = pct > 0.12 && pct < 0.26 ? 0.95 : 1.0
             return MascotMotion(
-                vertical: jump,
-                bounce: jump,
+                vertical: bounce,
+                bounce: bounce,
+                shake: 0,
+                squashX: squashX,
+                squashY: squashY
+            )
+        case .warning:
+            let cycle = time.truncatingRemainder(dividingBy: 2.4)
+            let pct = CGFloat(cycle / 2.4)
+            let lift = lerp(
+                [(0, 0), (0.08, -1.2), (0.17, 0.2), (0.26, -0.4), (0.36, 0), (1, 0)],
+                at: pct
+            )
+            let shake = pct < 0.18 ? CGFloat(sin(time * 32) * 0.2) : 0
+            let squashX: CGFloat = lift > 0.1 ? 1.025 : 1.0
+            let squashY: CGFloat = lift > 0.1 ? 0.985 : 1.0
+            return MascotMotion(
+                vertical: lift,
+                bounce: lift,
                 shake: shake,
                 squashX: squashX,
                 squashY: squashY
@@ -1810,9 +1951,206 @@ struct MascotView: View {
     }
 }
 
+private struct CodexMintBearMascotView: View {
+    let status: MascotStatus
+    let size: CGFloat
+    var animationTime: TimeInterval?
+    var isDragging: Bool
+    var showsIdleSleepOverlay: Bool
+    var expression: CodexMascotExpression
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            if reduceMotion {
+                frame(time: reducedMotionTime)
+            } else if let animationTime {
+                frame(time: animationTime)
+            } else {
+                TimelineView(.periodic(from: .now, by: animationInterval)) { context in
+                    frame(time: context.date.timeIntervalSinceReferenceDate)
+                }
+            }
+        }
+    }
+
+    private func frame(time: TimeInterval) -> some View {
+        let motion = spriteMotion(time: time)
+
+        return ZStack(alignment: .topLeading) {
+            Image(assetName)
+                .resizable()
+                .interpolation(.none)
+                .scaledToFit()
+                .frame(width: size * 1.04, height: size * 1.04)
+                .scaleEffect(x: motion.scaleX, y: motion.scaleY, anchor: .center)
+                .rotationEffect(.degrees(motion.rotation))
+                .offset(x: motion.x, y: motion.y)
+
+            if showsSleepOverlay {
+                FloatingZOverlay(size: size, time: time)
+                    .offset(x: size * 0.03, y: -size * 0.05)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+
+    private var assetName: String {
+        if expression == .music {
+            return "CodexMintBearMusic"
+        }
+
+        switch status {
+        case .idle:
+            return "CodexMintBearIdle"
+        case .working:
+            return "CodexMintBearThinking"
+        case .completed:
+            return "CodexMintBearDone"
+        case .warning:
+            return "CodexMintBearWaiting"
+        case .dragging:
+            return "CodexMintBearIdle"
+        }
+    }
+
+    private var showsSleepOverlay: Bool {
+        status == .idle && expression != .music && showsIdleSleepOverlay && !reduceMotion
+    }
+
+    private var animationInterval: TimeInterval {
+        if expression == .music {
+            return 0.05
+        }
+
+        switch status {
+        case .idle:
+            return 0.10
+        case .working:
+            return 0.05
+        case .completed:
+            return 0.05
+        case .warning:
+            return 0.04
+        case .dragging:
+            return 0.025
+        }
+    }
+
+    private var reducedMotionTime: TimeInterval {
+        switch status {
+        case .idle:
+            return 0
+        case .working:
+            return 0.35
+        case .completed:
+            return 2.2
+        case .warning:
+            return 1.8
+        case .dragging:
+            return 0.4
+        }
+    }
+
+    private func spriteMotion(time: TimeInterval) -> CodexMintBearSpriteMotion {
+        if isDragging || status == .dragging {
+            return CodexMintBearSpriteMotion(
+                x: CGFloat(sin(time * 14.5) * 0.42),
+                y: CGFloat(-size * 0.08 + sin(time * 8.2) * 1.6),
+                scaleX: 1.04,
+                scaleY: 0.97,
+                rotation: sin(time * 5.2) * 5.0
+            )
+        }
+
+        if expression == .music {
+            let bounce = CGFloat(sin(time * 3.6 + 0.4) * 0.74 + sin(time * 6.2) * 0.18)
+            let sway = CGFloat(sin(time * 2.9) * 0.46 + sin(time * 5.1 + 0.8) * 0.16)
+            let squash = CGFloat(sin(time * 3.6 + 1.1) * 0.025)
+            return CodexMintBearSpriteMotion(
+                x: sway,
+                y: bounce,
+                scaleX: 1.0 + squash,
+                scaleY: 1.0 - squash * 0.72,
+                rotation: sin(time * 2.4) * 1.6
+            )
+        }
+
+        switch status {
+        case .idle:
+            return CodexMintBearSpriteMotion(
+                x: 0,
+                y: CGFloat(sin(time * 1.8) * 0.55),
+                scaleX: 1,
+                scaleY: 1,
+                rotation: 0
+            )
+        case .working:
+            return CodexMintBearSpriteMotion(
+                x: CGFloat(sin(time * 2.4) * 0.22),
+                y: CGFloat(sin(time * .pi * 2.0) * 0.36),
+                scaleX: 1,
+                scaleY: 1,
+                rotation: 0
+            )
+        case .completed:
+            let cycle = time.truncatingRemainder(dividingBy: 3.4)
+            let pct = CGFloat(cycle / 3.4)
+            let bounce = lerp([(0, 0), (0.10, -2.8), (0.22, 0.8), (0.34, -1.2), (0.48, 0), (1, 0)], at: pct)
+            return CodexMintBearSpriteMotion(
+                x: 0,
+                y: bounce,
+                scaleX: pct > 0.12 && pct < 0.26 ? 1.05 : 1.0,
+                scaleY: pct > 0.12 && pct < 0.26 ? 0.95 : 1.0,
+                rotation: 0
+            )
+        case .warning:
+            let cycle = time.truncatingRemainder(dividingBy: 2.4)
+            let pct = CGFloat(cycle / 2.4)
+            let lift = lerp([(0, 0), (0.08, -1.2), (0.17, 0.2), (0.26, -0.4), (0.36, 0), (1, 0)], at: pct)
+            return CodexMintBearSpriteMotion(
+                x: pct < 0.18 ? CGFloat(sin(time * 32) * 0.2) : 0,
+                y: lift,
+                scaleX: lift > 0.1 ? 1.025 : 1.0,
+                scaleY: lift > 0.1 ? 0.985 : 1.0,
+                rotation: 0
+            )
+        case .dragging:
+            return CodexMintBearSpriteMotion(x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0)
+        }
+    }
+
+    private func lerp(_ frames: [(CGFloat, CGFloat)], at pct: CGFloat) -> CGFloat {
+        guard let first = frames.first else { return 0 }
+        if pct <= first.0 {
+            return first.1
+        }
+        for index in 1..<frames.count {
+            let previous = frames[index - 1]
+            let next = frames[index]
+            if pct <= next.0 {
+                let progress = (pct - previous.0) / (next.0 - previous.0)
+                return previous.1 + (next.1 - previous.1) * progress
+            }
+        }
+        return frames.last?.1 ?? 0
+    }
+}
+
+private struct CodexMintBearSpriteMotion {
+    let x: CGFloat
+    let y: CGFloat
+    let scaleX: CGFloat
+    let scaleY: CGFloat
+    let rotation: Double
+}
+
 private enum MascotRenderMode {
     case idle
     case working
+    case completed
     case warning
     case dragging
 }
@@ -1938,11 +2276,15 @@ private struct AlertHalo: View {
     let size: CGFloat
     var time: TimeInterval?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // Halo is a subtle glow effect - lower refresh rate is sufficient
     private static let updateInterval: TimeInterval = 0.10  // 10 FPS
 
     var body: some View {
-        if let time {
+        if reduceMotion {
+            staticHalo
+        } else if let time {
             haloBody(time: time)
         } else {
             TimelineView(.periodic(from: .now, by: Self.updateInterval)) { context in
@@ -1951,13 +2293,20 @@ private struct AlertHalo: View {
         }
     }
 
+    private var staticHalo: some View {
+        Circle()
+            .fill(tint.opacity(0.10))
+            .frame(width: size * 0.76)
+            .blur(radius: size * 0.06)
+    }
+
     private func haloBody(time: TimeInterval) -> some View {
-        let pulse = CGFloat(sin(time * 6) * 0.5 + 0.5)
+        let pulse = CGFloat(sin(time * 2.7) * 0.5 + 0.5)
 
         return Circle()
-            .fill(tint.opacity(0.10 + pulse * 0.12))
-            .frame(width: size * (0.78 + pulse * 0.10))
-            .blur(radius: size * 0.07)
+            .fill(tint.opacity(0.07 + pulse * 0.08))
+            .frame(width: size * (0.76 + pulse * 0.06))
+            .blur(radius: size * 0.06)
     }
 }
 
