@@ -712,8 +712,8 @@ struct NotchView: View {
                                 if shouldShowClosedMusicNotes {
                                     ClosedMusicNotesIndicator(size: petIconSize)
                                         .offset(
-                                            x: petIconSize * 0.58,
-                                            y: -petIconSize * 0.18
+                                            x: closedMusicIndicatorOffset.width,
+                                            y: closedMusicIndicatorOffset.height
                                         )
                                         .zIndex(2)
                                 }
@@ -785,16 +785,26 @@ struct NotchView: View {
     }
 
     private var closedStatusIndicatorOverlayOffset: CGSize {
+        let notchAvoidanceShift: CGFloat = viewModel.hasPhysicalNotch ? -petIconSize * 0.34 : 0
+
         switch closedActivityState {
         case .thinking:
-            return CGSize(width: petIconSize * 0.92, height: petIconSize * 0.02)
+            return CGSize(width: petIconSize * 0.92 + notchAvoidanceShift, height: petIconSize * 0.02)
         case .finished:
-            return CGSize(width: petIconSize * 0.86, height: -petIconSize * 0.10)
+            return CGSize(width: petIconSize * 0.86 + notchAvoidanceShift, height: -petIconSize * 0.10)
         case .approval, .question:
-            return CGSize(width: petIconSize * 0.84, height: -petIconSize * 0.08)
+            return CGSize(width: petIconSize * 0.84 + notchAvoidanceShift, height: -petIconSize * 0.08)
         case .idle:
             return .zero
         }
+    }
+
+    private var closedMusicIndicatorOffset: CGSize {
+        let notchAvoidanceShift: CGFloat = viewModel.hasPhysicalNotch ? -petIconSize * 0.26 : 0
+        return CGSize(
+            width: petIconSize * 0.58 + notchAvoidanceShift,
+            height: -petIconSize * 0.18
+        )
     }
 
     private var closedMascotStatusSeparationShift: CGFloat {
