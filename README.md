@@ -15,11 +15,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/liuyuplus/jade-cub/releases/tag/unsigned-1.0.0">
-    <img src="https://img.shields.io/badge/Preview-unsigned--1.0.0-16A34A?style=flat-square" alt="Unsigned preview release">
+  <a href="https://github.com/liuyuplus/jade-cub/releases/tag/v1.0.0">
+    <img src="https://img.shields.io/badge/Release-v1.0.0-16A34A?style=flat-square" alt="Jade Cub v1.0.0 release">
   </a>
-  <a href="https://github.com/liuyuplus/jade-cub/releases/download/unsigned-1.0.0/JadeCub-1.0.0-release-unsigned.dmg">
-    <img src="https://img.shields.io/badge/Download-DMG-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="Download unsigned DMG">
+  <a href="https://github.com/liuyuplus/jade-cub/releases/download/v1.0.0/JadeCub-1.0.0.dmg">
+    <img src="https://img.shields.io/badge/Download-DMG-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="Download DMG">
   </a>
   <img src="https://img.shields.io/badge/macOS-14%2B-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="macOS 14 or later">
   <img src="https://img.shields.io/badge/Swift-6.1-FA7343?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.1">
@@ -28,7 +28,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/jade-cub-status-island.png" width="720" alt="Jade Cub status island preview">
+  <img src="docs/images/jade-cub-clean-promo.png" width="920" alt="Jade Cub green bear status island, Obsidian setup, and local shelf preview">
 </p>
 
 
@@ -111,12 +111,12 @@ The green bear state images come from the app asset catalog. Additional client m
 
 ### Download a Release
 
-1. Download the current [unsigned preview DMG](https://github.com/liuyuplus/jade-cub/releases/download/unsigned-1.0.0/JadeCub-1.0.0-release-unsigned.dmg), or visit [Releases](https://github.com/liuyuplus/jade-cub/releases/tag/unsigned-1.0.0) for the ZIP as well.
+1. Download the current [Jade Cub DMG](https://github.com/liuyuplus/jade-cub/releases/download/v1.0.0/JadeCub-1.0.0.dmg), or visit [Releases](https://github.com/liuyuplus/jade-cub/releases/tag/v1.0.0) for the ZIP as well.
 2. Open the DMG.
 3. Move `Jade Cub.app` into your Applications folder.
 4. Launch the app and start the clients you want Jade Cub to monitor.
 
-> The current public build is unsigned and not notarized. On first launch, macOS may require Control-click -> Open or `System Settings -> Privacy & Security -> Open Anyway`. Jade Cub may also ask for Accessibility / Apple Events permissions for focus-return features.
+> Jade Cub may ask for Accessibility / Apple Events permissions for focus-return features.
 
 <a id="build-from-source"></a>
 ### Build from Source

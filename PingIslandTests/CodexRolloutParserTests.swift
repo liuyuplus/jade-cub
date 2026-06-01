@@ -287,6 +287,54 @@ final class CodexRolloutParserTests: XCTestCase {
         XCTAssertEqual(summarySnapshot?.phase, .idle)
     }
 
+    func testRolloutParserClearsAbortedTurnFromRunningTasks() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let threadId = "019e4f7c-28a4-73b0-83e5-aborted-turn"
+        let abortedTurnId = "019e4f7c-28a4-73b0-83e5-aborted"
+        let completedTurnId = "019e4f7c-28a4-73b0-83e5-done"
+        let abortedStartedAt = Date().addingTimeInterval(-4 * 60)
+        let abortedAt = Date().addingTimeInterval(-3 * 60)
+        let completedStartedAt = Date().addingTimeInterval(-2 * 60)
+        let completedAt = Date().addingTimeInterval(-30)
+        let rolloutURL = tempDirectory.appendingPathComponent("rollout-\(threadId).jsonl")
+        let rollout = """
+        {"timestamp":"\(iso8601String(abortedStartedAt.addingTimeInterval(-1)))","type":"session_meta","payload":{"id":"\(threadId)","cwd":"/Users/ping-island/Island","originator":"Codex Desktop","source":"vscode"}}
+        {"timestamp":"\(iso8601String(abortedStartedAt))","type":"event_msg","payload":{"type":"task_started","turn_id":"\(abortedTurnId)"}}
+        {"timestamp":"\(iso8601String(abortedAt))","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"\(abortedTurnId)","reason":"interrupted"}}
+        {"timestamp":"\(iso8601String(completedStartedAt))","type":"event_msg","payload":{"type":"task_started","turn_id":"\(completedTurnId)"}}
+        {"timestamp":"\(iso8601String(completedAt.addingTimeInterval(-1)))","type":"event_msg","payload":{"type":"agent_message","phase":"final_answer","message":"Done."}}
+        {"timestamp":"\(iso8601String(completedAt))","type":"event_msg","payload":{"type":"task_complete","turn_id":"\(completedTurnId)","last_agent_message":"Done."}}
+        """
+        try rollout.write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let clientInfo = SessionClientInfo(
+            kind: .codexApp,
+            profileID: "codex-app",
+            name: "Codex App",
+            bundleIdentifier: "com.openai.codex",
+            sessionFilePath: rolloutURL.path
+        )
+        let fullSnapshot = await CodexRolloutParser.shared.parseThread(
+            threadId: threadId,
+            fallbackCwd: "/Users/ping-island/Island",
+            clientInfo: clientInfo,
+            historyMode: .fullHistory
+        )
+        let summarySnapshot = await CodexRolloutParser.shared.parseThread(
+            threadId: threadId,
+            fallbackCwd: "/Users/ping-island/Island",
+            clientInfo: clientInfo,
+            historyMode: .summary
+        )
+
+        XCTAssertEqual(fullSnapshot?.phase, .waitingForInput)
+        XCTAssertEqual(summarySnapshot?.phase, .waitingForInput)
+    }
+
     func testRolloutParserDoesNotTreatNamespacedDesktopMCPCallAsApproval() async throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

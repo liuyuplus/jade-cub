@@ -356,6 +356,11 @@ actor CodexRolloutParser {
             case "turn_aborted", "turn_cancelled", "turn_canceled":
                 state.latestTurnAborted = true
                 state.latestTaskCompletedAt = timestamp
+                if let turnId = stringValue(payload["turn_id"])?.nonEmpty {
+                    state.runningTaskStartedAtByTurnID.removeValue(forKey: turnId)
+                } else {
+                    state.runningTaskStartedAtByTurnID.removeAll()
+                }
                 state.intervention = nil
                 Self.markRunningToolsInterrupted(in: &state.historyItems)
                 state.phase = .idle
@@ -864,6 +869,11 @@ actor CodexRolloutParser {
                 case "turn_aborted", "turn_cancelled", "turn_canceled":
                     latestTurnAborted = true
                     latestTaskCompletedAt = timestamp
+                    if let turnId = stringValue(payload["turn_id"])?.nonEmpty {
+                        runningTaskStartedAtByTurnID.removeValue(forKey: turnId)
+                    } else {
+                        runningTaskStartedAtByTurnID.removeAll()
+                    }
                     intervention = nil
                     Self.markRunningToolsInterrupted(in: &historyItems)
                     phase = .idle

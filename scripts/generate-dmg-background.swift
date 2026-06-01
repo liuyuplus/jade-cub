@@ -44,6 +44,14 @@ func defaultMascotPath() -> String {
         .path
 }
 
+func bundledMascotPath(named assetName: String) -> String {
+    scriptURL()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("PingIsland/Assets.xcassets/\(assetName).imageset/\(assetName).png")
+        .path
+}
+
 func parseArguments() throws -> Configuration {
     var outputPath: String?
     var mascotPath: String?
@@ -125,6 +133,27 @@ func drawText(
 func drawMascot(_ image: NSImage?, in rect: NSRect, alpha: CGFloat = 1.0) {
     guard let image else { return }
     image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: alpha)
+}
+
+func drawScatteredStateMascots(width: CGFloat, height: CGFloat) {
+    let mascotSize = width <= 900 ? width * 0.06 : 74
+    let states: [(assetName: String, xRatio: CGFloat, yRatio: CGFloat, scale: CGFloat, alpha: CGFloat)] = [
+        ("CodexMintBearIdle", 0.78, 0.675, 1.0, 0.88),
+        ("CodexMintBearWaiting", 0.075, 0.165, 0.92, 0.92),
+        ("CodexMintBearFailed", 0.855, 0.205, 0.88, 0.90)
+    ]
+
+    for state in states {
+        let assetName = state.assetName
+        let path = bundledMascotPath(named: assetName)
+        let image = NSImage(contentsOfFile: path)
+        let size = mascotSize * state.scale
+        drawMascot(
+            image,
+            in: NSRect(x: width * state.xRatio, y: height * state.yRatio, width: size, height: size),
+            alpha: state.alpha
+        )
+    }
 }
 
 func drawPaw(at point: CGPoint, scale: CGFloat, color: NSColor, rotation: CGFloat) {
@@ -262,17 +291,7 @@ func drawBackground(configuration: Configuration) throws {
 
     drawGround(width: canvasWidth, height: canvasHeight)
 
-    let mascotImage = configuration.mascotPath.flatMap { NSImage(contentsOfFile: $0) }
-    drawMascot(
-        mascotImage,
-        in: NSRect(x: canvasWidth * 0.065, y: canvasHeight * 0.055, width: canvasWidth * 0.115, height: canvasWidth * 0.115),
-        alpha: 0.98
-    )
-    drawMascot(
-        mascotImage,
-        in: NSRect(x: canvasWidth * 0.772, y: canvasHeight * 0.662, width: canvasWidth * 0.15, height: canvasWidth * 0.15),
-        alpha: 0.07
-    )
+    drawScatteredStateMascots(width: canvasWidth, height: canvasHeight)
 
     let slotSize = canvasWidth <= 900 ? canvasWidth * 0.16 : 250
     let appCenter = CGPoint(x: canvasWidth * 0.276, y: canvasHeight * 0.48)

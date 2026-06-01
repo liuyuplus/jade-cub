@@ -42,8 +42,11 @@ final class MusicNowPlayingStore: ObservableObject {
     @Published private(set) var diagnostic: String = "Music reader idle"
 
     private static let automaticRefreshInterval: TimeInterval = 1.25
+    private static let responsiveRefreshDelays: [TimeInterval] = [0, 0.25, 0.65, 1.2, 2.0, 3.2]
+    private static let playbackCommandRefreshDelays: [TimeInterval] = [0.25, 0.65, 1.05, 1.6]
 
     private var refreshTimer: Timer?
+    private var responsiveRefreshWorkItems: [DispatchWorkItem] = []
     private var hasRequestedSystemNowPlaying = false
     private var spotifyObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
@@ -67,12 +70,17 @@ final class MusicNowPlayingStore: ObservableObject {
     func stop() {
         refreshTimer?.invalidate()
         refreshTimer = nil
+        cancelResponsiveRefreshBurst()
         endSpotifyObservation()
         endWorkspaceObservation()
     }
 
     func refresh() {
         refresh(forceProbe: false)
+    }
+
+    func refreshResponsively() {
+        scheduleResponsiveRefreshBurst(delays: Self.responsiveRefreshDelays)
     }
 
     private func refresh(forceProbe: Bool) {
@@ -112,13 +120,36 @@ final class MusicNowPlayingStore: ObservableObject {
         diagnostic = "Sending \(command.displayName)..."
         SystemMediaCommandSender.shared.send(command)
 
-        for delay in [0.25, 0.65, 1.05, 1.6] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        scheduleResponsiveRefreshBurst(
+            delays: Self.playbackCommandRefreshDelays,
+            stopWhenTrackAvailable: false
+        )
+    }
+
+    private func scheduleResponsiveRefreshBurst(
+        delays: [TimeInterval],
+        stopWhenTrackAvailable: Bool = true
+    ) {
+        cancelResponsiveRefreshBurst()
+
+        for delay in delays {
+            let workItem = DispatchWorkItem { [weak self] in
                 MainActor.assumeIsolated {
-                    self?.refresh(forceProbe: true)
+                    guard let self else { return }
+                    if stopWhenTrackAvailable, self.track != nil {
+                        return
+                    }
+                    self.refresh(forceProbe: true)
                 }
             }
+            responsiveRefreshWorkItems.append(workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
         }
+    }
+
+    private func cancelResponsiveRefreshBurst() {
+        responsiveRefreshWorkItems.forEach { $0.cancel() }
+        responsiveRefreshWorkItems.removeAll()
     }
 
     private func query(_ source: MusicSource) -> Result<MusicNowPlayingTrack?, Error> {
@@ -212,6 +243,7 @@ final class MusicNowPlayingStore: ObservableObject {
         let names: [Notification.Name] = [
             NSWorkspace.didLaunchApplicationNotification,
             NSWorkspace.didTerminateApplicationNotification,
+            NSWorkspace.didActivateApplicationNotification,
         ]
 
         workspaceObservers = names.map { name in
@@ -232,8 +264,9 @@ final class MusicNowPlayingStore: ObservableObject {
                         self?.track = nil
                         self?.lastError = nil
                         self?.diagnostic = "No supported music player running"
+                        self?.cancelResponsiveRefreshBurst()
                     } else {
-                        self?.refresh(forceProbe: true)
+                        self?.scheduleResponsiveRefreshBurst(delays: Self.responsiveRefreshDelays)
                     }
                 }
             }

@@ -34,7 +34,10 @@ struct MusicPanelView: View {
                 )
             }
         )
-        .onAppear { store.start() }
+        .onAppear {
+            store.start()
+            store.refreshResponsively()
+        }
     }
 
     private var header: some View {
@@ -62,7 +65,7 @@ struct MusicPanelView: View {
 
             Spacer(minLength: 0)
 
-            Button(action: store.refresh) {
+            Button(action: store.refreshResponsively) {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.66))
