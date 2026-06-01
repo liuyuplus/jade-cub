@@ -25,11 +25,15 @@ enum NotchOpenReason {
 
 enum NotchContentType: Equatable {
     case instances
+    case shelf
+    case music
     case chat(SessionState)
 
     var id: String {
         switch self {
         case .instances: return "instances"
+        case .shelf: return "shelf"
+        case .music: return "music"
         case .chat(let session): return "chat-\(session.sessionId)"
         }
     }
@@ -60,8 +64,10 @@ class NotchViewModel: ObservableObject {
 
     private static let defaultClosedHeight = ScreenNotchMetrics.fallbackClosedHeight
     private static let defaultClosedWidth: CGFloat = 266
-    private static let clickedInstancesPanelWidthRatio: CGFloat = 0.44
-    private static let clickedInstancesPanelMaximumWidth: CGFloat = 520
+    private static let physicalNotchClosedWidthPadding: CGFloat = 164
+    private static let physicalNotchClosedMinimumWidth: CGFloat = 352
+    private static let manualTabPanelMaximumWidth: CGFloat = 560
+    private static let manualTabPanelMinimumContentHeight: CGFloat = 248
     private static let detachmentLongPressNarrowedWidthScale: CGFloat = 0.82
     private static let detachmentLongPressMaximumShrink: CGFloat = 56
     @Published private(set) var closedWidth: CGFloat
@@ -79,7 +85,10 @@ class NotchViewModel: ObservableObject {
     }
     var closedSize: CGSize {
         if usesPhysicalNotchClosedPresentation {
-            return deviceNotchRect.size
+            return CGSize(
+                width: Self.expandedPhysicalNotchWidth(deviceNotchRect: deviceNotchRect),
+                height: deviceNotchRect.height
+            )
         }
         return CGSize(width: closedWidth, height: closedHeight)
     }
@@ -112,7 +121,16 @@ class NotchViewModel: ObservableObject {
         guard hasPhysicalNotch else { return defaultClosedWidth }
         let systemWidth = ceil(deviceNotchRect.width)
         guard systemWidth > 0 else { return defaultClosedWidth }
-        return max(defaultClosedWidth, systemWidth)
+        return max(defaultClosedWidth, expandedPhysicalNotchWidth(deviceNotchRect: deviceNotchRect))
+    }
+
+    private static func expandedPhysicalNotchWidth(deviceNotchRect: CGRect) -> CGFloat {
+        let systemWidth = ceil(deviceNotchRect.width)
+        guard systemWidth > 0 else { return defaultClosedWidth }
+        return max(
+            physicalNotchClosedMinimumWidth,
+            systemWidth + physicalNotchClosedWidthPadding
+        )
     }
 
     private var narrowedClosedWidth: CGFloat {
@@ -168,20 +186,45 @@ class NotchViewModel: ObservableObject {
                     height: min(maxAllowedHeight, screenRect.height - 180)
                 )
             }
-        case .instances:
-            let fallbackHeight: CGFloat = openReason == .hover ? 180 : 200
+        case .shelf, .music:
+            let fallbackHeight: CGFloat = Self.manualTabPanelMinimumContentHeight
             let measuredHeight = openedMeasuredHeight ?? fallbackHeight
 
             switch style {
             case .docked:
                 return CGSize(
-                    width: openReason == .hover
-                        ? min(screenRect.width - 64, 600)
-                        : min(
-                            screenRect.width * Self.clickedInstancesPanelWidthRatio,
-                            Self.clickedInstancesPanelMaximumWidth
-                        ),
-                    height: min(maxAllowedHeight, max(closedHeight + 24, measuredHeight))
+                    width: min(screenRect.width - 64, Self.manualTabPanelMaximumWidth),
+                    height: min(
+                        maxAllowedHeight,
+                        max(
+                            closedHeight + 24,
+                            Self.manualTabPanelMinimumContentHeight,
+                            measuredHeight
+                        )
+                    )
+                )
+            case .detached:
+                return CGSize(
+                    width: min(screenRect.width - 112, 420),
+                    height: min(maxAllowedHeight, max(closedHeight + 24, min(measuredHeight, 340)))
+                )
+            }
+        case .instances:
+            let fallbackHeight: CGFloat = Self.manualTabPanelMinimumContentHeight
+            let measuredHeight = openedMeasuredHeight ?? fallbackHeight
+
+            switch style {
+            case .docked:
+                return CGSize(
+                    width: min(screenRect.width - 64, Self.manualTabPanelMaximumWidth),
+                    height: min(
+                        maxAllowedHeight,
+                        max(
+                            closedHeight + 24,
+                            Self.manualTabPanelMinimumContentHeight,
+                            measuredHeight
+                        )
+                    )
                 )
             case .detached:
                 return CGSize(
@@ -224,6 +267,8 @@ class NotchViewModel: ObservableObject {
 
         switch contentType {
         case .chat:
+            return min(screenLimit, maxPanelHeight)
+        case .shelf, .music:
             return min(screenLimit, maxPanelHeight)
         case .instances:
             return min(screenLimit, maxPanelHeight)
@@ -274,6 +319,7 @@ class NotchViewModel: ObservableObject {
     private let detachmentLongPressResetDuration: TimeInterval = 0.18
     private let detachmentTapMovementTolerance: CGFloat = 8
     private var detachmentLongPressWorkItem: DispatchWorkItem?
+    private var lastManualPanelTab: ManualPanelTab?
 
     var onDetachmentRequested: ((IslandDetachmentRequest) -> Void)?
     var onDetachmentUpdated: ((CGPoint) -> Void)?
@@ -289,6 +335,12 @@ class NotchViewModel: ObservableObject {
     }
 
     private var detachmentTracking: DockedDetachmentTracking?
+
+    private enum ManualPanelTab {
+        case coding
+        case shelf
+        case music
+    }
 
     // MARK: - Initialization
 
@@ -690,6 +742,7 @@ class NotchViewModel: ObservableObject {
     var shouldSuppressAutomaticPresentation: Bool {
         presentationMode == .detached
             || isFullscreenBrowserHiddenActive
+            || isFullscreenPhysicalNotchCompactActive
             || (isFullscreenEdgeRevealActive && status != .opened)
     }
 
@@ -731,12 +784,13 @@ class NotchViewModel: ObservableObject {
 
     // MARK: - Actions
 
-    func notchOpen(reason: NotchOpenReason = .unknown) {
+    @discardableResult
+    func notchOpen(reason: NotchOpenReason = .unknown) -> Bool {
         hoverTimer?.cancel()
         hoverTimer = nil
 
         if reason == .notification && shouldSuppressAutomaticPresentation {
-            return
+            return false
         }
 
         openReason = reason
@@ -748,27 +802,32 @@ class NotchViewModel: ObservableObject {
         // Don't restore chat on notification - show instances list instead
         if reason == .notification {
             currentChatSession = nil
-            return
+            return true
         }
 
         // Hover opens a lightweight preview instead of restoring the full chat view.
         if reason == .hover {
-            return
+            return true
         }
 
         // Restore chat session if we had one open before
         if let chatSession = currentChatSession {
             // Avoid unnecessary updates if already showing this chat
             if case .chat(let current) = contentType, current.sessionId == chatSession.sessionId {
-                return
+                return true
             }
             contentType = .chat(chatSession)
         }
+        return true
     }
 
     func performDeferredHoverOpenIfNeeded() {
         guard isHovering else { return }
         guard status == .closed || status == .popping else { return }
+        guard !isFullscreenPhysicalNotchCompactActive else { return }
+        if presentLastManualPanel(reason: .hover) {
+            return
+        }
         notchOpen(reason: .hover)
     }
 
@@ -793,6 +852,8 @@ class NotchViewModel: ObservableObject {
         switch contentType {
         case .chat(let session):
             currentChatSession = session
+        case .shelf, .music:
+            currentChatSession = nil
         case .instances:
             currentChatSession = nil
         }
@@ -866,13 +927,14 @@ class NotchViewModel: ObservableObject {
     /// Surface a session from an automatic notification without collapsing first.
     /// This keeps attention-driven panel refreshes stable when the notch is already open.
     func presentNotificationChat(for session: SessionState) {
-        notchOpen(reason: .notification)
+        guard notchOpen(reason: .notification) else { return }
         showChat(for: session)
     }
 
     /// Surface manual-attention content through the route resolver instead of forcing chat.
     /// Approval cards should take priority over the underlying session detail view.
     func presentNotificationAttention() {
+        guard !shouldSuppressAutomaticPresentation else { return }
         currentChatSession = nil
         contentType = .instances
         openedMeasuredHeight = nil
@@ -887,8 +949,42 @@ class NotchViewModel: ObservableObject {
     }
 
     func presentSessionList(reason: NotchOpenReason = .click) {
+        rememberManualPanelTab(.coding, reason: reason)
         exitChat()
         notchOpen(reason: reason)
+    }
+
+    func presentShelf(reason: NotchOpenReason = .click) {
+        rememberManualPanelTab(.shelf, reason: reason)
+        currentChatSession = nil
+        openedMeasuredHeight = nil
+        contentType = .shelf
+        notchOpen(reason: reason)
+    }
+
+    func presentMusic(reason: NotchOpenReason = .click) {
+        rememberManualPanelTab(.music, reason: reason)
+        currentChatSession = nil
+        openedMeasuredHeight = nil
+        contentType = .music
+        notchOpen(reason: reason)
+    }
+
+    @discardableResult
+    func presentLastManualPanel(reason: NotchOpenReason = .click) -> Bool {
+        guard (reason == .click || reason == .hover), let lastManualPanelTab else {
+            return false
+        }
+
+        switch lastManualPanelTab {
+        case .coding:
+            presentSessionList(reason: reason)
+        case .shelf:
+            presentShelf(reason: reason)
+        case .music:
+            presentMusic(reason: reason)
+        }
+        return true
     }
 
     func toggleSessionList(reason: NotchOpenReason = .click) {
@@ -908,6 +1004,11 @@ class NotchViewModel: ObservableObject {
 
         guard sanitized != openedMeasuredHeight else { return }
         openedMeasuredHeight = sanitized
+    }
+
+    private func rememberManualPanelTab(_ tab: ManualPanelTab, reason: NotchOpenReason) {
+        guard reason == .click else { return }
+        lastManualPanelTab = tab
     }
 
     func setManualAttentionActive(_ isActive: Bool) {

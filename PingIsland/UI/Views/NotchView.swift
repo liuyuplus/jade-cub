@@ -707,6 +707,7 @@ struct NotchView: View {
                                 )
                                 .matchedGeometryEffect(id: "pet", in: activityNamespace, isSource: showsClosedLeadingIcon)
                                 .frame(width: sideWidth)
+                                .offset(x: closedMascotHeadLeftShift)
                                 .zIndex(1)
 
                                 if shouldShowClosedMusicNotes {
@@ -784,6 +785,10 @@ struct NotchView: View {
         viewModel.hasPhysicalNotch ? -10 : 0
     }
 
+    private var closedMascotHeadLeftShift: CGFloat {
+        viewModel.hasPhysicalNotch ? -petIconSize * 0.34 : 0
+    }
+
     private var closedStatusIndicatorOverlayOffset: CGSize {
         let notchAvoidanceShift: CGFloat = viewModel.hasPhysicalNotch ? -petIconSize * 0.34 : 0
 
@@ -812,7 +817,11 @@ struct NotchView: View {
     }
 
     private var closedLeadingWidth: CGFloat {
-        sideWidth + closedStatusIndicatorWidth + closedMusicIndicatorWidth
+        sideWidth + closedStatusIndicatorWidth + closedMusicIndicatorWidth + closedMascotLeftReserve
+    }
+
+    private var closedMascotLeftReserve: CGFloat {
+        viewModel.hasPhysicalNotch ? abs(closedMascotHeadLeftShift) : 0
     }
 
     private var closedMusicIndicatorWidth: CGFloat {
