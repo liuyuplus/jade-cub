@@ -116,6 +116,7 @@ struct RunningIcon: View {
     let size: CGFloat
     let color: Color
     @State private var rotation: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(size: CGFloat = 12, color: Color = TerminalColors.cyan) {
         self.size = size
@@ -169,14 +170,27 @@ struct RunningIcon: View {
             }
         }
         .frame(width: size, height: size)
-        .rotationEffect(.degrees(rotation))
+        .rotationEffect(.degrees(reduceMotion ? 0 : rotation))
         .onAppear {
-            withAnimation(
-                .linear(duration: 2.0)
-                .repeatForever(autoreverses: false)
-            ) {
-                rotation = 360
+            guard !reduceMotion else { return }
+            startRotation()
+        }
+        .onChange(of: reduceMotion) { _, isEnabled in
+            if isEnabled {
+                rotation = 0
+            } else {
+                startRotation()
             }
+        }
+    }
+
+    private func startRotation() {
+        rotation = 0
+        withAnimation(
+            .linear(duration: 2.0)
+            .repeatForever(autoreverses: false)
+        ) {
+            rotation = 360
         }
     }
 }

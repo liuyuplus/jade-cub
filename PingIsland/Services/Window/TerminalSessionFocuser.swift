@@ -12,7 +12,7 @@ import os.log
 
 actor TerminalSessionFocuser {
     static let shared = TerminalSessionFocuser()
-    private let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "TerminalFocus")
+    private let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "TerminalFocus")
     private let iTermSelectionRetryDelayNanoseconds: UInt64 = 250_000_000
 
     struct GhosttyTerminalSnapshot: Equatable {

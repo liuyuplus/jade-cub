@@ -56,4 +56,29 @@ struct SessionPhaseHelpers {
         let value = timeAgo(date, now: now)
         return value == "now" ? "<1m" : value
     }
+
+    static func elapsedBadgeLabel(since date: Date, now: Date = Date()) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        if seconds < 60 { return "\(seconds)s" }
+        if seconds < 3600 {
+            let minutes = seconds / 60
+            let remainder = seconds % 60
+            return "\(minutes)m\(remainder)s"
+        }
+        return "\(seconds / 3600)h"
+    }
+
+    static func activityBadgeLabel(for session: SessionState, now: Date = Date()) -> String {
+        switch session.phase {
+        case .processing, .compacting:
+            if let lastUserMessageDate = session.lastUserMessageDate {
+                return elapsedBadgeLabel(since: lastUserMessageDate, now: now)
+            }
+            return elapsedBadgeLabel(since: session.lastActivity, now: now)
+        case .waitingForApproval:
+            return timeBadgeLabel(for: session.attentionRequestedAt ?? session.lastActivity, now: now)
+        case .waitingForInput, .idle, .ended:
+            return timeBadgeLabel(for: session.lastActivity, now: now)
+        }
+    }
 }

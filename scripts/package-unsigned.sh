@@ -10,21 +10,21 @@ BUILD_DIR="$PROJECT_DIR/build/unsigned"
 DERIVED_DATA_PATH="$BUILD_DIR/DerivedData"
 STAGING_DIR="$BUILD_DIR/dmg-staging"
 RELEASE_DIR="$PROJECT_DIR/releases/unsigned"
-DMG_BACKGROUND_SOURCE="${PING_ISLAND_DMG_BACKGROUND_SOURCE:-$PROJECT_DIR/docs/images/ping-island-dmg-installer-background.png}"
-DMG_LOGO_SOURCE="${PING_ISLAND_DMG_LOGO_SOURCE:-$PROJECT_DIR/docs/images/ping-island-icon-transparent.svg}"
+DMG_BACKGROUND_SOURCE="${JADE_CUB_DMG_BACKGROUND_SOURCE:-${PING_ISLAND_DMG_BACKGROUND_SOURCE:-$PROJECT_DIR/docs/images/jade-cub-dmg-installer-background.png}}"
+DMG_LOGO_SOURCE="${JADE_CUB_DMG_LOGO_SOURCE:-${PING_ISLAND_DMG_LOGO_SOURCE:-$PROJECT_DIR/PingIsland/Assets.xcassets/AppIcon.appiconset/icon_1024x1024.png}}"
 
-APP_BUNDLE_NAME="Ping Island.app"
-APP_PRODUCT_NAME="PingIsland"
+APP_BUNDLE_NAME="Jade Cub.app"
+APP_PRODUCT_NAME="JadeCub"
 SCHEME="PingIsland"
 PROJECT_FILE="$PROJECT_DIR/PingIsland.xcodeproj"
 APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release/$APP_BUNDLE_NAME"
 BUILD_MODE_LABEL="release"
 
-echo "=== Packaging Unsigned Ping Island ==="
+echo "=== Packaging Unsigned Jade Cub ==="
 echo ""
 
 resolve_exported_app_icon() {
-    local requested_icon_source="${PING_ISLAND_DMG_ICON_SOURCE:-}"
+    local requested_icon_source="${JADE_CUB_DMG_ICON_SOURCE:-${PING_ISLAND_DMG_ICON_SOURCE:-}}"
     local bundled_icon_path="$APP_PATH/Contents/Resources/AppIcon.icns"
 
     if [ -n "$requested_icon_source" ]; then
@@ -54,6 +54,7 @@ if [ ! -f "$DMG_BACKGROUND_SOURCE" ]; then
     exit 1
 fi
 
+export JADE_CUB_DMG_BACKGROUND_SOURCE="$DMG_BACKGROUND_SOURCE"
 export PING_ISLAND_DMG_BACKGROUND_SOURCE="$DMG_BACKGROUND_SOURCE"
 
 rm -rf "$BUILD_DIR"
@@ -95,6 +96,7 @@ if [ ! -f "$DMG_ICON_SOURCE" ]; then
     exit 1
 fi
 
+export JADE_CUB_DMG_ICON_SOURCE="$DMG_ICON_SOURCE"
 export PING_ISLAND_DMG_ICON_SOURCE="$DMG_ICON_SOURCE"
 
 echo ""
@@ -126,7 +128,7 @@ echo "Creating ZIP..."
 ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 
 echo "Creating DMG..."
-create_styled_dmg "$APP_PATH" "$DMG_PATH" "Ping Island" "$STAGING_DIR" "$PROJECT_DIR"
+create_styled_dmg "$APP_PATH" "$DMG_PATH" "Jade Cub" "$STAGING_DIR" "$PROJECT_DIR"
 
 echo ""
 echo "=== Unsigned Package Ready ==="

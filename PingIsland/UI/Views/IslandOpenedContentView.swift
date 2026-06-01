@@ -9,7 +9,9 @@ struct IslandOpenedContentView: View {
     let activeCompletionNotification: SessionCompletionNotification?
     var highlightedSessionStableID: String? = nil
     var contentWidthOverride: CGFloat? = nil
+    var acknowledgedCompletedSessionStableIDs: Set<String> = []
     let onAttentionActionCompleted: () -> Void
+    var onAcknowledgeCompletedSession: (SessionState) -> Void = { _ in }
     let onCompletionNotificationHoverChanged: (Bool) -> Void
     let onDismissCompletionNotification: () -> Void
 
@@ -43,8 +45,14 @@ struct IslandOpenedContentView: View {
                 sessionMonitor: sessionMonitor,
                 viewModel: viewModel,
                 enableKeyboardNavigation: surface == .docked,
-                highlightedSessionStableID: highlightedSessionStableID
+                highlightedSessionStableID: highlightedSessionStableID,
+                acknowledgedCompletedSessionStableIDs: acknowledgedCompletedSessionStableIDs,
+                onAcknowledgeCompletedSession: onAcknowledgeCompletedSession
             )
+        case .shelf:
+            ShelfPanelView()
+        case .music:
+            MusicPanelView()
         case .hoverDashboard:
             SessionHoverDashboardView(
                 sessions: hoverPreviewSessions,
@@ -81,6 +89,7 @@ struct IslandOpenedContentView: View {
                     sessionMonitor: sessionMonitor,
                     viewModel: viewModel
                 )
+                .id(liveSession.stableId)
             }
         }
     }

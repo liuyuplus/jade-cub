@@ -409,7 +409,7 @@ enum ClientProfileRegistry {
         ManagedHookClientProfile(
             id: "claude-hooks",
             title: "Claude Code",
-            subtitle: "管理 ~/.claude/settings.json，使用统一 PingIslandBridge hooks 入口",
+            subtitle: "管理 ~/.claude/settings.json，使用统一 Jade Cub Bridge hooks 入口",
             alwaysVisibleInSettings: true,
             logoAssetName: "ClaudeLogo",
             prefersBundledLogoOverAppIcon: true,
@@ -545,15 +545,15 @@ enum ClientProfileRegistry {
         ManagedHookClientProfile(
             id: "openclaw-hooks",
             title: "OpenClaw",
-            subtitle: "管理 ~/.openclaw/hooks/ping-island-openclaw，并自动启用内部 hook",
+            subtitle: "管理 ~/.openclaw/hooks/jade-cub-openclaw，并自动启用内部 hook",
             installationKind: .hookDirectory,
             alwaysVisibleInSettings: true,
             logoAssetName: "OpenClawLogo",
             prefersBundledLogoOverAppIcon: true,
             iconSymbolName: "bird.fill",
-            configurationRelativePath: ".openclaw/hooks/ping-island-openclaw",
+            configurationRelativePath: ".openclaw/hooks/jade-cub-openclaw",
             activationConfigurationRelativePath: ".openclaw/openclaw.json",
-            activationEntryName: "ping-island-openclaw",
+            activationEntryName: "jade-cub-openclaw",
             bridgeSource: "claude",
             bridgeExtraArguments: [
                 "--client-kind", "openclaw",
@@ -740,14 +740,14 @@ enum ClientProfileRegistry {
         ManagedHookClientProfile(
             id: "opencode-hooks",
             title: "OpenCode",
-            subtitle: "管理 ~/.config/opencode/plugins/ping-island.js，按 OpenCode 官方插件 hooks 接入 Island",
+            subtitle: "管理 ~/.config/opencode/plugins/jade-cub.js，按 OpenCode 官方插件 hooks 接入 Island",
             installationKind: .pluginFile,
             alwaysVisibleInSettings: true,
             logoAssetName: "OpenCodeLogo",
             prefersBundledLogoOverAppIcon: true,
             localAppBundleIdentifiers: ["ai.opencode.desktop"],
             iconSymbolName: "waveform.path.ecg.text",
-            configurationRelativePath: ".config/opencode/plugins/ping-island.js",
+            configurationRelativePath: ".config/opencode/plugins/jade-cub.js",
             activationConfigurationRelativePath: ".config/opencode/config.json",
             bridgeSource: "claude",
             bridgeExtraArguments: [
@@ -1025,7 +1025,7 @@ enum ClientProfileRegistry {
         ManagedIDEExtensionProfile(
             id: "vscode-extension",
             title: "VS Code",
-            subtitle: "安装 Ping Island，支持终端精准聚焦",
+            subtitle: "安装 Jade Cub，支持终端精准聚焦",
             logoAssetName: "VSCodeLogo",
             prefersBundledLogoOverAppIcon: true,
             localAppBundleIdentifiers: ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"],
@@ -1040,7 +1040,7 @@ enum ClientProfileRegistry {
         ManagedIDEExtensionProfile(
             id: "cursor-extension",
             title: "Cursor",
-            subtitle: "安装 Ping Island，支持终端精准聚焦",
+            subtitle: "安装 Jade Cub，支持终端精准聚焦",
             logoAssetName: "CursorLogo",
             prefersBundledLogoOverAppIcon: true,
             localAppBundleIdentifiers: ["com.todesktop.230313mzl4w4u92"],
@@ -1055,7 +1055,7 @@ enum ClientProfileRegistry {
         ManagedIDEExtensionProfile(
             id: "codebuddy-extension",
             title: "CodeBuddy",
-            subtitle: "安装 Ping Island，支持终端精准聚焦",
+            subtitle: "安装 Jade Cub，支持终端精准聚焦",
             logoAssetName: "CodeBuddyLogo",
             prefersBundledLogoOverAppIcon: true,
             localAppBundleIdentifiers: ["com.tencent.codebuddy", "com.codebuddy.app"],
@@ -1076,7 +1076,7 @@ enum ClientProfileRegistry {
         ManagedIDEExtensionProfile(
             id: "workbuddy-extension",
             title: "WorkBuddy",
-            subtitle: "安装 Ping Island，支持终端精准聚焦",
+            subtitle: "安装 Jade Cub，支持终端精准聚焦",
             showsInSettings: false,
             logoAssetName: "WorkBuddyLogo",
             prefersBundledLogoOverAppIcon: true,
@@ -1092,7 +1092,7 @@ enum ClientProfileRegistry {
         ManagedIDEExtensionProfile(
             id: "qoder-extension",
             title: "Qoder",
-            subtitle: "安装 Ping Island，支持会话跳转与终端精准聚焦",
+            subtitle: "安装 Jade Cub，支持会话跳转与终端精准聚焦",
             logoAssetName: "QoderLogo",
             prefersBundledLogoOverAppIcon: true,
             sessionFocusStrategy: .qoderChatHistory,

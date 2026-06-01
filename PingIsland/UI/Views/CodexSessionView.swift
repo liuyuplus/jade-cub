@@ -100,7 +100,8 @@ struct CodexSessionView: View {
                     .lineLimit(1)
             }
 
-            if let preview = session.previewText ?? session.lastMessage {
+            if shouldShowSummaryPreview,
+               let preview = session.previewText ?? session.lastMessage {
                 Text(preview)
                     .font(.system(size: 13))
                     .foregroundColor(.white.opacity(0.72))
@@ -120,6 +121,10 @@ struct CodexSessionView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color.white.opacity(0.05))
         )
+    }
+
+    private var shouldShowSummaryPreview: Bool {
+        session.intervention != nil
     }
 
     private func interventionCard(_ intervention: SessionIntervention) -> some View {
@@ -145,26 +150,39 @@ struct CodexSessionView: View {
     }
 
     private func approvalButtons(_ intervention: SessionIntervention) -> some View {
-        HStack(spacing: 8) {
-            Button(AppLocalization.string("Allow Once")) {
-                sessionMonitor.approvePermission(sessionId: session.sessionId)
-                viewModel.exitChat()
-            }
-            .buttonStyle(CodexCapsuleButtonStyle(background: Color.white.opacity(0.9), foreground: .black))
+        Group {
+            if intervention.supportsInlineResponse {
+                HStack(spacing: 8) {
+                    Button(AppLocalization.string("Allow Once")) {
+                        sessionMonitor.approvePermission(sessionId: session.sessionId)
+                        viewModel.exitChat()
+                    }
+                    .buttonStyle(CodexCapsuleButtonStyle(background: Color.white.opacity(0.9), foreground: .black))
 
-            if intervention.supportsSessionScope {
-                Button(AppLocalization.string("Allow Session")) {
-                    sessionMonitor.approvePermission(sessionId: session.sessionId, forSession: true)
-                    viewModel.exitChat()
+                    if intervention.supportsSessionScope {
+                        Button(AppLocalization.string("Allow Session")) {
+                            sessionMonitor.approvePermission(sessionId: session.sessionId, forSession: true)
+                            viewModel.exitChat()
+                        }
+                        .buttonStyle(CodexCapsuleButtonStyle(background: TerminalColors.blue.opacity(0.28)))
+                    }
+
+                    Button(AppLocalization.string("Deny")) {
+                        sessionMonitor.denyPermission(sessionId: session.sessionId, reason: nil)
+                        viewModel.exitChat()
+                    }
+                    .buttonStyle(CodexCapsuleButtonStyle(background: Color.white.opacity(0.1)))
                 }
-                .buttonStyle(CodexCapsuleButtonStyle(background: TerminalColors.blue.opacity(0.28)))
+            } else {
+                HStack(spacing: 0) {
+                    Button {
+                        openClient()
+                    } label: {
+                        Text(verbatim: AppLocalization.format("打开 %@", session.interactionDisplayName))
+                    }
+                    .buttonStyle(CodexCapsuleButtonStyle(background: Color.white.opacity(0.9), foreground: .black))
+                }
             }
-
-            Button(AppLocalization.string("Deny")) {
-                sessionMonitor.denyPermission(sessionId: session.sessionId, reason: nil)
-                viewModel.exitChat()
-            }
-            .buttonStyle(CodexCapsuleButtonStyle(background: Color.white.opacity(0.1)))
         }
     }
 
@@ -264,6 +282,7 @@ struct CodexThreadInspectorView: View {
 
     @ObservedObject private var settings = AppSettings.shared
     @State private var snapshot: CodexThreadSnapshot?
+    @State private var snapshotSessionId: String?
     @State private var isLoading = false
     @State private var isSendingFollowUp = false
     @State private var followUpText = ""
@@ -283,21 +302,72 @@ struct CodexThreadInspectorView: View {
 
     private var primaryResultText: String? {
         session.codexSubagentSummaryText(
-            for: snapshot?.displayResultText ?? session.previewText ?? session.lastMessage
+            for: currentSnapshot?.displayResultText ?? session.previewText ?? session.lastMessage
         )
     }
 
+    private var currentSnapshot: CodexThreadSnapshot? {
+        guard snapshotSessionId == session.sessionId else { return nil }
+        return snapshot
+    }
+
     private var recentItems: [ChatHistoryItem] {
-        let source = snapshot?.historyItems ?? session.chatItems
-        let filtered = source.filter {
-            switch $0.type {
-            case .user, .assistant, .thinking:
-                return true
-            case .toolCall, .interrupted:
-                return false
+        var items: [ChatHistoryItem] = []
+
+        if mode == .hover,
+           let userText = sanitizedDisplayText(currentSnapshot?.latestUserText) ?? latestUserItemText {
+            items.append(ChatHistoryItem(
+                id: "codex-latest-user",
+                type: .user(userText),
+                timestamp: currentSnapshot?.updatedAt ?? session.lastActivity
+            ))
+        }
+
+        if let resultText = primaryResultText {
+            items.append(ChatHistoryItem(
+                id: "codex-latest-answer",
+                type: .assistant(resultText),
+                timestamp: currentSnapshot?.updatedAt ?? session.lastActivity
+            ))
+        }
+
+        if items.isEmpty, let thinkingText = latestThinkingItemText {
+            items.append(ChatHistoryItem(
+                id: "codex-latest-thinking",
+                type: .thinking(thinkingText),
+                timestamp: currentSnapshot?.updatedAt ?? session.lastActivity
+            ))
+        }
+
+        return items
+    }
+
+    private var latestUserItemText: String? {
+        latestText { item in
+            if case .user(let text) = item.type {
+                return text
+            }
+            return nil
+        }
+    }
+
+    private var latestThinkingItemText: String? {
+        latestText { item in
+            if case .thinking(let text) = item.type {
+                return text
+            }
+            return nil
+        }
+    }
+
+    private func latestText(_ extractor: (ChatHistoryItem) -> String?) -> String? {
+        let source = currentSnapshot?.historyItems ?? session.chatItems
+        for item in source.reversed() {
+            if let text = sanitizedDisplayText(extractor(item)) {
+                return text
             }
         }
-        return Array(filtered.suffix(mode.historyLimit))
+        return nil
     }
 
     private var bodyFontSize: CGFloat {
@@ -334,9 +404,10 @@ struct CodexThreadInspectorView: View {
                     .foregroundColor(.white.opacity(0.56))
             }
 
-            if !recentItems.isEmpty {
+            let rows = recentItems.filter { !isDuplicatePrimaryResult($0) }
+            if !rows.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(recentItems.enumerated()), id: \.offset) { _, item in
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, item in
                         conversationRow(for: item)
                     }
                 }
@@ -374,6 +445,24 @@ struct CodexThreadInspectorView: View {
         case .hover:
             return AppLocalization.string("Session result")
         }
+    }
+
+    private func isDuplicatePrimaryResult(_ item: ChatHistoryItem) -> Bool {
+        guard case .assistant(let text) = item.type,
+              let primary = sanitizedDisplayText(primaryResultText),
+              let rowText = sanitizedDisplayText(text) else {
+            return false
+        }
+        return rowText == primary
+    }
+
+    private func sanitizedDisplayText(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let collapsed = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return collapsed.isEmpty ? nil : collapsed
     }
 
     @ViewBuilder
@@ -432,14 +521,21 @@ struct CodexThreadInspectorView: View {
     private func conversationRow(for item: ChatHistoryItem) -> some View {
         let row = rowContent(for: item)
         return HStack(alignment: .top, spacing: 8) {
-            Text(row.prefix)
-                .font(.system(size: max(10, bodyFontSize - 2), weight: .semibold))
-                .foregroundColor(row.prefixColor)
-                .frame(width: 18, alignment: .leading)
-                .padding(.top, 2)
+            if case .thinking = item.type {
+                ThinkingDotsIndicator(color: .white, dotSize: 4, spacing: 3)
+                    .frame(width: 18, height: 8)
+                    .padding(.top, 4)
+                Spacer()
+            } else {
+                Text(row.prefix)
+                    .font(.system(size: max(10, bodyFontSize - 2), weight: .semibold))
+                    .foregroundColor(row.prefixColor)
+                    .frame(width: 18, alignment: .leading)
+                    .padding(.top, 2)
 
-            MarkdownText(row.text, color: row.textColor, fontSize: max(10, bodyFontSize - 2))
-                .lineLimit(mode == .hover ? 2 : nil)
+                MarkdownText(row.text, color: row.textColor, fontSize: max(10, bodyFontSize - 2))
+                    .lineLimit(mode == .hover ? 2 : nil)
+            }
         }
     }
 
@@ -449,8 +545,8 @@ struct CodexThreadInspectorView: View {
             return ("你", .white.opacity(0.72), text, .white.opacity(0.72))
         case .assistant(let text):
             return ("答", .white, text, .white.opacity(0.82))
-        case .thinking(let text):
-            return ("注", TerminalColors.blue.opacity(0.9), text, .white.opacity(0.58))
+        case .thinking:
+            return ("", .clear, "", .clear)
         case .toolCall, .interrupted:
             return ("", .clear, "", .clear)
         }
@@ -459,11 +555,15 @@ struct CodexThreadInspectorView: View {
     @MainActor
     private func reloadThread() async {
         guard session.provider == .codex else { return }
+        snapshot = nil
+        snapshotSessionId = session.sessionId
         isLoading = true
         loadError = nil
 
         do {
-            snapshot = try await sessionMonitor.loadCodexThread(sessionId: session.sessionId)
+            let loadedSnapshot = try await sessionMonitor.loadCodexThread(sessionId: session.sessionId)
+            guard snapshotSessionId == session.sessionId else { return }
+            snapshot = loadedSnapshot
         } catch {
             loadError = error.localizedDescription
         }
@@ -484,7 +584,7 @@ struct CodexThreadInspectorView: View {
                 try await sessionMonitor.sendSessionMessage(
                     sessionId: session.sessionId,
                     text: text,
-                    expectedTurnId: snapshot?.latestTurnId
+                    expectedTurnId: currentSnapshot?.latestTurnId
                 )
             } catch {
                 await MainActor.run {

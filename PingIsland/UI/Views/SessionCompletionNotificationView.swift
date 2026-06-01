@@ -64,6 +64,17 @@ struct SessionCompletionNotification: Equatable, Identifiable {
     }
 }
 
+extension SessionCompletionNotification.Kind {
+    var mascotStatus: MascotStatus {
+        switch self {
+        case .completed, .ended:
+            return .completed
+        case .compacted:
+            return .working
+        }
+    }
+}
+
 enum SessionCompletionPreviewBuilder {
     static func latestUserText(for session: SessionState) -> String? {
         for item in session.chatItems.reversed() {

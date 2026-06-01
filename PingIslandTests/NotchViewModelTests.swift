@@ -77,14 +77,21 @@ final class NotchViewModelTests: XCTestCase {
         }
     }
 
-    func testClickedSessionListUsesRoomierWidthThanCompactClosedNotch() async {
+    func testManualTabsUseConsistentDockedSize() async {
         await MainActor.run {
             let viewModel = makeViewModel()
 
             viewModel.presentSessionList(reason: .click)
+            let sessionListSize = viewModel.openedSize
+            viewModel.presentShelf(reason: .click)
+            let shelfSize = viewModel.openedSize
+            viewModel.presentMusic(reason: .click)
+            let musicSize = viewModel.openedSize
 
-            XCTAssertEqual(viewModel.openedSize.width, 520)
-            XCTAssertGreaterThan(viewModel.openedSize.width, viewModel.closedSize.width)
+            XCTAssertEqual(sessionListSize, shelfSize)
+            XCTAssertEqual(sessionListSize, musicSize)
+            XCTAssertEqual(sessionListSize.width, 560)
+            XCTAssertGreaterThan(sessionListSize.width, viewModel.closedSize.width)
         }
     }
 
@@ -101,7 +108,7 @@ final class NotchViewModelTests: XCTestCase {
             )
 
             XCTAssertEqual(viewModel.closedHeight, 38)
-            XCTAssertEqual(viewModel.closedSize, CGSize(width: 266, height: 38))
+            XCTAssertEqual(viewModel.closedSize, CGSize(width: 340, height: 38))
         }
     }
 
@@ -117,8 +124,8 @@ final class NotchViewModelTests: XCTestCase {
                 fullscreenActivityProvider: { _ in false }
             )
 
-            XCTAssertEqual(viewModel.closedWidth, 312)
-            XCTAssertEqual(viewModel.closedSize, CGSize(width: 312, height: 38))
+            XCTAssertEqual(viewModel.closedWidth, 432)
+            XCTAssertEqual(viewModel.closedSize, CGSize(width: 432, height: 38))
         }
     }
 
@@ -273,6 +280,36 @@ final class NotchViewModelTests: XCTestCase {
         }
     }
 
+    func testPhysicalNotchFullscreenSuppressesAutomaticPanelOpenButKeepsManualClick() async {
+        await MainActor.run {
+            let viewModel = NotchViewModel(
+                deviceNotchRect: CGRect(x: 0, y: 0, width: 220, height: 38),
+                screenRect: CGRect(x: 0, y: 0, width: 1512, height: 982),
+                windowHeight: 320,
+                hasPhysicalNotch: true,
+                enableEventMonitoring: false,
+                observeSystemEnvironment: false,
+                fullscreenActivityProvider: { _ in true }
+            )
+            let session = makeSession(id: "fullscreen-notification")
+
+            XCTAssertTrue(viewModel.isFullscreenPhysicalNotchCompactActive)
+            XCTAssertTrue(viewModel.shouldSuppressAutomaticPresentation)
+
+            viewModel.presentNotificationChat(for: session)
+            XCTAssertEqual(viewModel.status, .closed)
+            XCTAssertEqual(viewModel.contentType, .instances)
+
+            viewModel.isHovering = true
+            viewModel.performDeferredHoverOpenIfNeeded()
+            XCTAssertEqual(viewModel.status, .closed)
+
+            viewModel.notchOpen(reason: .click)
+            XCTAssertEqual(viewModel.status, .opened)
+            XCTAssertEqual(viewModel.openReason, .click)
+        }
+    }
+
     func testIdleAutoHideTracksVisibleSessionActivity() async {
         let viewModel = await MainActor.run {
             NotchViewModel(
@@ -319,6 +356,34 @@ final class NotchViewModelTests: XCTestCase {
 
             XCTAssertEqual(viewModel.status, .closed)
             XCTAssertEqual(viewModel.contentType, .instances)
+        }
+    }
+
+    func testLastManualPanelRestoresClickedMusicTabAfterClose() async {
+        await MainActor.run {
+            let viewModel = makeViewModel()
+
+            viewModel.presentMusic(reason: .click)
+            viewModel.notchClose()
+
+            XCTAssertTrue(viewModel.presentLastManualPanel(reason: .click))
+            XCTAssertEqual(viewModel.status, .opened)
+            XCTAssertEqual(viewModel.openReason, .click)
+            XCTAssertEqual(viewModel.contentType, .music)
+        }
+    }
+
+    func testLastManualPanelRestoresClickedShelfTabForHoverOpen() async {
+        await MainActor.run {
+            let viewModel = makeViewModel()
+
+            viewModel.presentShelf(reason: .click)
+            viewModel.notchClose()
+
+            XCTAssertTrue(viewModel.presentLastManualPanel(reason: .hover))
+            XCTAssertEqual(viewModel.status, .opened)
+            XCTAssertEqual(viewModel.openReason, .hover)
+            XCTAssertEqual(viewModel.contentType, .shelf)
         }
     }
 

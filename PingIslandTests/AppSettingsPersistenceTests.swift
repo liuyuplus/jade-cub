@@ -81,7 +81,8 @@ final class AppSettingsPersistenceTests: XCTestCase {
         let defaults = makeDefaults()
         let store = makeStore(defaults: defaults)
 
-        XCTAssertEqual(store.subagentVisibilityMode, .visible)
+        XCTAssertEqual(store.subagentVisibilityMode, .hidden)
+        XCTAssertEqual(defaults.string(forKey: "subagentVisibilityMode"), SubagentVisibilityMode.hidden.rawValue)
 
         store.subagentVisibilityMode = .visible
         let reloadedStore = makeStore(defaults: defaults)
@@ -113,12 +114,12 @@ final class AppSettingsPersistenceTests: XCTestCase {
         let defaults = makeDefaults()
         let store = makeStore(defaults: defaults)
 
-        XCTAssertTrue(store.autoOpenCompactedNotificationPanel)
+        XCTAssertFalse(store.autoOpenCompactedNotificationPanel)
 
-        store.autoOpenCompactedNotificationPanel = false
+        store.autoOpenCompactedNotificationPanel = true
         let reloadedStore = makeStore(defaults: defaults)
-        XCTAssertFalse(reloadedStore.autoOpenCompactedNotificationPanel)
-        XCTAssertEqual(defaults.object(forKey: "autoOpenCompactedNotificationPanel") as? Bool, false)
+        XCTAssertTrue(reloadedStore.autoOpenCompactedNotificationPanel)
+        XCTAssertEqual(defaults.object(forKey: "autoOpenCompactedNotificationPanel") as? Bool, true)
     }
 
     func testAutomaticUpdateChecksEnabledPersists() {

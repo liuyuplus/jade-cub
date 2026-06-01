@@ -5,13 +5,13 @@ Create one Markdown file per version:
 - `releases/notes/1.2.3.md`
 - `releases/notes/1.2.4.md`
 
-The app shows these notes in the in-app update popup and the release script publishes them as `PingIsland-<version>.md`.
+The app shows these notes in the in-app update popup and the release script publishes them as `JadeCub-<version>.md`.
 When `scripts/create-release.sh` creates or updates a GitHub Release, it also uses `releases/notes/<version>.md` as the release body when that file exists.
 
 Recommended template:
 
 ```md
-# Ping Island 1.2.3
+# Jade Cub 1.2.3
 
 ## 亮点
 

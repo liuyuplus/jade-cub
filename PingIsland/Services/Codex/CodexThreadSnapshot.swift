@@ -20,6 +20,7 @@ struct CodexThreadSnapshot: Equatable, Sendable {
     let latestResponseText: String?
     let latestResponsePhase: String?
     let latestUserText: String?
+    let isHistoryCompact: Bool
 
     nonisolated init(
         threadId: String,
@@ -40,7 +41,8 @@ struct CodexThreadSnapshot: Equatable, Sendable {
         latestTurnId: String?,
         latestResponseText: String?,
         latestResponsePhase: String?,
-        latestUserText: String?
+        latestUserText: String?,
+        isHistoryCompact: Bool = false
     ) {
         self.threadId = threadId
         self.name = name
@@ -61,6 +63,7 @@ struct CodexThreadSnapshot: Equatable, Sendable {
         self.latestResponseText = latestResponseText
         self.latestResponsePhase = latestResponsePhase
         self.latestUserText = latestUserText
+        self.isHistoryCompact = isHistoryCompact
     }
 
     nonisolated var isSubagent: Bool {

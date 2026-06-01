@@ -296,20 +296,6 @@ struct ChatView: View {
         .white.opacity(0.9)
     }
 
-    private var processingAccentColor: Color {
-        session.clientTintColor
-    }
-
-    /// Get the last user message ID for stable text selection per turn
-    private var lastUserMessageId: String {
-        for item in history.reversed() {
-            if case .user = item.type {
-                return item.id
-            }
-        }
-        return ""
-    }
-
     // MARK: - Loading State
 
     private var loadingState: some View {
@@ -355,7 +341,7 @@ struct ChatView: View {
 
                         // Processing indicator at bottom (first due to flip)
                         if isProcessing {
-                            ProcessingIndicatorView(turnId: lastUserMessageId, color: processingAccentColor)
+                            ProcessingIndicatorView()
                                 .padding(.horizontal, 16)
                                 .scaleEffect(x: 1, y: -1)
                                 .transition(.asymmetric(
@@ -491,6 +477,9 @@ struct ChatView: View {
             tool: tool,
             toolInput: session.pendingToolInput,
             sessionAction: session.scopedApprovalAction,
+            supportsInlineResponse: session.intervention?.supportsInlineResponse ?? true,
+            openClientTitle: AppLocalization.format("打开 %@", session.interactionDisplayName),
+            onOpenClient: { openClientApplication() },
             onApprove: { approvePermission() },
             onApproveForSession: { approvePermissionForSession() },
             onDeny: { denyPermission() }
@@ -772,8 +761,8 @@ struct MessageItemView: View {
             )
         case .toolCall(let tool):
             ToolCallView(tool: tool, sessionId: sessionId)
-        case .thinking(let text):
-            ThinkingView(text: text)
+        case .thinking:
+            ThinkingView()
         case .interrupted:
             InterruptedMessageView()
         }
@@ -785,7 +774,7 @@ struct MessageItemView: View {
 struct UserMessageView: View {
     let text: String
     let onTap: () -> Void
-    private let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "ChatTap")
+    private let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "ChatTap")
 
     var body: some View {
         HStack {
@@ -814,7 +803,7 @@ struct AssistantMessageView: View {
     let accentColor: Color
     let textColor: Color
     let onTap: () -> Void
-    private let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "ChatTap")
+    private let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "ChatTap")
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -839,38 +828,18 @@ struct AssistantMessageView: View {
 // MARK: - Processing Indicator
 
 struct ProcessingIndicatorView: View {
-    private let baseTexts = ["Processing", "Working"]
     private let color: Color
-    private let baseText: String
 
-    @State private var dotCount: Int = 1
-    private let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
-
-    /// Use a turnId to select text consistently per user turn
-    init(turnId: String = "", color: Color = Color(red: 0.85, green: 0.47, blue: 0.34)) {
-        // Use hash of turnId to pick base text consistently for this turn
-        let index = abs(turnId.hashValue) % baseTexts.count
-        baseText = AppLocalization.string(baseTexts[index])
+    init(color: Color = .white) {
         self.color = color
     }
 
-    private var dots: String {
-        String(repeating: ".", count: dotCount)
-    }
-
     var body: some View {
-        HStack(alignment: .center, spacing: 6) {
-            ProcessingSpinner()
-                .frame(width: 6)
-
-            Text(baseText + dots)
-                .font(.system(size: 13))
-                .foregroundColor(color)
+        HStack(alignment: .center, spacing: 0) {
+            ThinkingDotsIndicator(color: color, dotSize: 4, spacing: 3)
+                .frame(width: 18, height: 8)
 
             Spacer()
-        }
-        .onReceive(timer) { _ in
-            dotCount = (dotCount % 3) + 1
         }
     }
 }
@@ -1178,45 +1147,11 @@ struct SubagentToolsSummary: View {
 // MARK: - Thinking View
 
 struct ThinkingView: View {
-    let text: String
-
-    @State private var isExpanded = false
-
-    private var canExpand: Bool {
-        text.count > 80
-    }
-
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Circle()
-                .fill(Color.gray.opacity(0.5))
-                .frame(width: 6, height: 6)
-                .padding(.top, 4)
-
-            Text(isExpanded ? text : String(text.prefix(80)) + (canExpand ? "..." : ""))
-                .font(.system(size: 11))
-                .foregroundColor(.gray)
-                .italic()
-                .lineLimit(isExpanded ? nil : 1)
-                .multilineTextAlignment(.leading)
-
+        HStack(alignment: .center, spacing: 0) {
+            ThinkingDotsIndicator(color: .white, dotSize: 4, spacing: 3)
+                .frame(width: 18, height: 8)
             Spacer()
-
-            if canExpand {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.gray.opacity(0.5))
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .padding(.top, 3)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if canExpand {
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                    isExpanded.toggle()
-                }
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 2)
@@ -1307,6 +1242,9 @@ struct ChatApprovalBar: View {
     let tool: String
     let toolInput: String?
     let sessionAction: SessionScopedApprovalAction?
+    let supportsInlineResponse: Bool
+    let openClientTitle: String
+    let onOpenClient: () -> Void
     let onApprove: () -> Void
     let onApproveForSession: () -> Void
     let onDeny: () -> Void
@@ -1335,54 +1273,71 @@ struct ChatApprovalBar: View {
 
             Spacer()
 
-            // Deny button
-            Button {
-                onDeny()
-            } label: {
-                Text("Deny")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .opacity(showDenyButton ? 1 : 0)
-            .scaleEffect(showDenyButton ? 1 : 0.8)
-
-            if let sessionAction {
+            if supportsInlineResponse {
+                // Deny button
                 Button {
-                    onApproveForSession()
+                    onDeny()
                 } label: {
-                    Text(AppLocalization.string(sessionAction.buttonTitleKey))
+                    Text("Deny")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.92))
+                        .foregroundColor(.white.opacity(0.7))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(TerminalColors.blue.opacity(0.26))
+                        .background(Color.white.opacity(0.1))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .opacity(showSessionButton ? 1 : 0)
-                .scaleEffect(showSessionButton ? 1 : 0.8)
-            }
+                .opacity(showDenyButton ? 1 : 0)
+                .scaleEffect(showDenyButton ? 1 : 0.8)
 
-            // Allow button
-            Button {
-                onApprove()
-            } label: {
-                Text("Allow")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.95))
-                    .clipShape(Capsule())
+                if let sessionAction {
+                    Button {
+                        onApproveForSession()
+                    } label: {
+                        Text(AppLocalization.string(sessionAction.buttonTitleKey))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.92))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(TerminalColors.blue.opacity(0.26))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(showSessionButton ? 1 : 0)
+                    .scaleEffect(showSessionButton ? 1 : 0.8)
+                }
+
+                // Allow button
+                Button {
+                    onApprove()
+                } label: {
+                    Text("Allow")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.95))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .opacity(showAllowButton ? 1 : 0)
+                .scaleEffect(showAllowButton ? 1 : 0.8)
+            } else {
+                Button {
+                    onOpenClient()
+                } label: {
+                    Text(verbatim: openClientTitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.95))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .opacity(showAllowButton ? 1 : 0)
+                .scaleEffect(showAllowButton ? 1 : 0.8)
             }
-            .buttonStyle(.plain)
-            .opacity(showAllowButton ? 1 : 0)
-            .scaleEffect(showAllowButton ? 1 : 0.8)
         }
         .frame(minHeight: 44)  // Consistent height with other bars
         .padding(.horizontal, 16)

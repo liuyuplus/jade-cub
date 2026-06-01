@@ -2,13 +2,13 @@ import AppKit
 import Foundation
 
 struct IDEExtensionInstaller {
-    nonisolated private static let extensionPublisher = "ping-island"
+    nonisolated private static let extensionPublisher = "jade-cub"
     nonisolated private static let extensionName = "session-focus"
     nonisolated private static let extensionIconFilename = "icon.png"
     nonisolated private static let extensionReadmeFilename = "README.md"
-    nonisolated private static let projectHomepage = "https://github.com/erha19/ping-island"
-    nonisolated private static let projectRepository = "https://github.com/erha19/ping-island.git"
-    nonisolated private static let projectIssues = "https://github.com/erha19/ping-island/issues"
+    nonisolated private static let projectHomepage = "https://github.com/liuyuplus/jade-cub"
+    nonisolated private static let projectRepository = "https://github.com/liuyuplus/jade-cub.git"
+    nonisolated private static let projectIssues = "https://github.com/liuyuplus/jade-cub/issues"
 
     nonisolated private static var extensionVersion: String {
         applicationVersion()
@@ -292,7 +292,7 @@ struct IDEExtensionInstaller {
         return """
         {
           "name": "\(extensionName)",
-          "displayName": "Ping Island",
+          "displayName": "Jade Cub",
           "description": "\(description)",
           "version": "\(extensionVersion)",
           "publisher": "\(extensionPublisher)",
@@ -334,7 +334,7 @@ struct IDEExtensionInstaller {
                         await vscode.commands.executeCommand('aicoding.chat.history', sessionId);
                         return true;
                     } catch (error) {
-                        console.warn('[ping-island] Failed to focus chat session', sessionId, error);
+                        console.warn('[jade-cub] Failed to focus chat session', sessionId, error);
                         return false;
                     }
                 }
@@ -403,20 +403,20 @@ struct IDEExtensionInstaller {
 
         function logInfo(message, details) {
             if (details === undefined) {
-                console.info(`[ping-island] ${message}`);
+                console.info(`[jade-cub] ${message}`);
                 return;
             }
 
-            console.info(`[ping-island] ${message}`, JSON.stringify(details));
+            console.info(`[jade-cub] ${message}`, JSON.stringify(details));
         }
 
         function logWarn(message, details) {
             if (details === undefined) {
-                console.warn(`[ping-island] ${message}`);
+                console.warn(`[jade-cub] ${message}`);
                 return;
             }
 
-            console.warn(`[ping-island] ${message}`, JSON.stringify(details));
+            console.warn(`[jade-cub] ${message}`, JSON.stringify(details));
         }
 
         function writeProbeFile(path, contents) {
@@ -717,7 +717,7 @@ struct IDEExtensionInstaller {
                 }));
             }
 
-            await vscode.window.showInformationMessage('Ping Island is ready in \(profile.title).');
+            await vscode.window.showInformationMessage('Jade Cub is ready in \(profile.title).');
         }
 
         function activate(context) {
@@ -755,16 +755,16 @@ struct IDEExtensionInstaller {
     private static func extensionReadme(for profile: ManagedIDEExtensionProfile) -> String {
         let capabilityLine = profile.supportsSessionFocus
             ? "It can reopen the matching chat session when the host IDE supports it, and otherwise falls back to the matching terminal tab."
-            : "It reopens the matching terminal tab from Ping Island's session context."
+            : "It reopens the matching terminal tab from Jade Cub's session context."
 
         return """
-        # Ping Island
+        # Jade Cub
 
-        Ping Island installs this VS Code-compatible extension so the app can jump back into the right IDE window for your active coding session.
+        Jade Cub installs this VS Code-compatible extension so the app can jump back into the right IDE window for your active coding session.
 
         \(capabilityLine)
 
-        Manage installs, reinstalls, and authorization from Ping Island's **Settings -> Integration** panel.
+        Manage installs, reinstalls, and authorization from Jade Cub's **Settings -> Integration** panel.
 
         Repository:
         \(projectHomepage)
@@ -802,8 +802,8 @@ struct IDEExtensionInstaller {
 
     private static func extensionDescription(for profile: ManagedIDEExtensionProfile) -> String {
         profile.supportsSessionFocus
-            ? "Lets Ping Island focus the matching chat session or terminal tab"
-            : "Lets Ping Island focus the matching terminal tab"
+            ? "Lets Jade Cub focus the matching chat session or terminal tab"
+            : "Lets Jade Cub focus the matching terminal tab"
     }
 
     nonisolated private static func applicationVersion() -> String {
@@ -814,15 +814,15 @@ struct IDEExtensionInstaller {
 
     private static func vsixManifest(for profile: ManagedIDEExtensionProfile) -> String {
         let description = profile.supportsSessionFocus
-            ? "Lets Ping Island focus the matching chat session or terminal tab in VS Code compatible IDEs."
-            : "Lets Ping Island focus the matching terminal tab in VS Code compatible IDEs."
+            ? "Lets Jade Cub focus the matching chat session or terminal tab in VS Code compatible IDEs."
+            : "Lets Jade Cub focus the matching terminal tab in VS Code compatible IDEs."
 
         return """
         <?xml version="1.0" encoding="utf-8"?>
         <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
           <Metadata>
             <Identity Language="en-US" Id="\(extensionName)" Version="\(extensionVersion)" Publisher="\(extensionPublisher)"/>
-            <DisplayName>Ping Island</DisplayName>
+            <DisplayName>Jade Cub</DisplayName>
             <Description xml:space="preserve">\(description)</Description>
           </Metadata>
           <Installation>

@@ -34,6 +34,9 @@ struct NotchView: View {
     private static let detachmentHintRetryDelay: TimeInterval = 0.75
     private static let notificationSoundFreshnessWindow: TimeInterval = 90
     private static let closedProcessingFreshnessWindow: TimeInterval = 10 * 60
+    private static let visualMascotPreviewNotificationName = Notification.Name("io.github.liuyuplus.jadecub.visualMascotPreview")
+    private static let visualMascotPreviewDefaultDuration: TimeInterval = 12
+    private static let closedTaskErrorVisualDuration: TimeInterval = 8
 
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var sessionMonitor: SessionMonitor
@@ -62,6 +65,8 @@ struct NotchView: View {
     @State private var activeCompletionNotification: SessionCompletionNotification?
     @State private var completionNotificationDismissWorkItem: DispatchWorkItem?
     @State private var shouldDismissCompletionNotificationOnHoverExit: Bool = false
+    @State private var visualMascotPreview: ClosedNotchVisualMascotPreview?
+    @State private var visualMascotPreviewObserver: NSObjectProtocol?
     @State private var isShowingDetachmentHint: Bool = false
     @State private var isShelfDropTargeted: Bool = false
     @State private var detachmentHintDismissWorkItem: DispatchWorkItem?
@@ -109,8 +114,9 @@ struct NotchView: View {
 
     private var shouldShowClosedTaskProgress: Bool {
         viewModel.status != .opened
+            && activeVisualMascotPreview == nil
             && !hasManualAttentionIndicator
-            && closedActivityState != .thinking
+            && effectiveClosedActivityState != .thinking
             && obsidianTaskStore.snapshot != nil
     }
 
@@ -213,6 +219,17 @@ struct NotchView: View {
         return .idle
     }
 
+    private var activeVisualMascotPreview: ClosedNotchVisualMascotPreview? {
+        guard let visualMascotPreview, !visualMascotPreview.isExpired else {
+            return nil
+        }
+        return visualMascotPreview
+    }
+
+    private var effectiveClosedActivityState: ClosedNotchActivityState {
+        activeVisualMascotPreview?.activityState ?? closedActivityState
+    }
+
     private var representativeClosedSession: SessionState? {
         if let attention = sessionMonitor.instances
             .filter({ $0.needsManualAttention })
@@ -238,7 +255,11 @@ struct NotchView: View {
     }
 
     private var closedMascotKind: MascotKind {
-        settings.mascotKind(for: latestMascotSourceSession(from: sessionMonitor.instances)?.mascotClient)
+        if activeVisualMascotPreview != nil {
+            return .codex
+        }
+
+        return settings.mascotKind(for: latestMascotSourceSession(from: sessionMonitor.instances)?.mascotClient)
     }
 
     private var completionNotificationMascotKind: MascotKind {
@@ -258,11 +279,11 @@ struct NotchView: View {
     private var temporaryMuteButtonHelpText: String {
         guard let mutedUntil = settings.temporarilyMuteNotificationsUntil,
               AppSettings.isNotificationMuteActive(until: mutedUntil) else {
-            return AppLocalization.string("10 分钟静音 Ping Island 通知和提示音")
+            return AppLocalization.string("10 分钟静音 Jade Cub 通知和提示音")
         }
 
         return AppLocalization.format(
-            "Ping Island 通知和提示音已静音至 %@，点击恢复",
+            "Jade Cub 通知和提示音已静音至 %@，点击恢复",
             formattedTemporaryMuteTime(mutedUntil)
         )
     }
@@ -272,7 +293,11 @@ struct NotchView: View {
             return .dragging
         }
 
-        switch closedActivityState {
+        if let preview = activeVisualMascotPreview {
+            return preview.status
+        }
+
+        switch effectiveClosedActivityState {
         case .idle:
             break
         case .thinking:
@@ -280,6 +305,8 @@ struct NotchView: View {
         case .finished:
             return .completed
         case .approval, .question:
+            return .warning
+        case .failed:
             return .warning
         }
 
@@ -318,6 +345,129 @@ struct NotchView: View {
         formatter.timeStyle = .short
         formatter.dateStyle = .none
         return formatter.string(from: date)
+    }
+
+    private func installVisualMascotPreviewObserverIfNeeded() {
+        guard visualMascotPreviewObserver == nil else { return }
+
+        visualMascotPreviewObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Self.visualMascotPreviewNotificationName,
+            object: nil,
+            queue: .main
+        ) { notification in
+            handleVisualMascotPreviewNotification(notification)
+        }
+    }
+
+    private func removeVisualMascotPreviewObserver() {
+        guard let visualMascotPreviewObserver else { return }
+        DistributedNotificationCenter.default().removeObserver(visualMascotPreviewObserver)
+        self.visualMascotPreviewObserver = nil
+    }
+
+    private func handleVisualMascotPreviewNotification(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let state = visualMascotPreviewState(from: userInfo) else {
+            return
+        }
+
+        if ["clear", "off", "none", "reset"].contains(state) {
+            visualMascotPreview = nil
+            return
+        }
+
+        guard let preview = visualMascotPreview(for: state, duration: visualMascotPreviewDuration(from: userInfo)) else {
+            return
+        }
+
+        presentVisualMascotPreview(preview)
+    }
+
+    private func presentVisualMascotPreview(_ preview: ClosedNotchVisualMascotPreview) {
+        visualMascotPreview = preview
+
+        let expiresAt = preview.expiresAt
+        let delay = max(0, expiresAt.timeIntervalSinceNow)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            if visualMascotPreview?.expiresAt == expiresAt {
+                visualMascotPreview = nil
+            }
+        }
+    }
+
+    private func visualMascotPreviewState(from userInfo: [AnyHashable: Any]) -> String? {
+        let rawState = userInfo["state"] ?? userInfo["status"]
+        guard let state = rawState as? String else { return nil }
+        return state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func visualMascotPreviewDuration(from userInfo: [AnyHashable: Any]) -> TimeInterval {
+        let rawDuration = userInfo["duration"] ?? userInfo["seconds"]
+        let duration: TimeInterval
+        if let number = rawDuration as? NSNumber {
+            duration = number.doubleValue
+        } else if let text = rawDuration as? String,
+                  let value = TimeInterval(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            duration = value
+        } else {
+            duration = Self.visualMascotPreviewDefaultDuration
+        }
+
+        return min(60, max(1, duration))
+    }
+
+    private func visualMascotPreview(
+        for state: String,
+        duration: TimeInterval
+    ) -> ClosedNotchVisualMascotPreview? {
+        let expiresAt = Date().addingTimeInterval(duration)
+
+        switch state {
+        case "idle", "空闲", "闲置":
+            return ClosedNotchVisualMascotPreview(
+                activityState: .idle,
+                status: .idle,
+                expression: .automatic,
+                expiresAt: expiresAt
+            )
+        case "thinking", "working", "processing", "process", "思考", "思考中":
+            return ClosedNotchVisualMascotPreview(
+                activityState: .thinking,
+                status: .working,
+                expression: .automatic,
+                expiresAt: expiresAt
+            )
+        case "done", "completed", "complete", "finished", "success", "完成", "完成态":
+            return ClosedNotchVisualMascotPreview(
+                activityState: .finished,
+                status: .completed,
+                expression: .automatic,
+                expiresAt: expiresAt
+            )
+        case "music", "playing", "song", "音乐", "播放":
+            return ClosedNotchVisualMascotPreview(
+                activityState: .idle,
+                status: .idle,
+                expression: .music,
+                expiresAt: expiresAt
+            )
+        case "error", "failed", "failure", "fail", "报错", "错误":
+            return ClosedNotchVisualMascotPreview(
+                activityState: .failed,
+                status: .warning,
+                expression: .failed,
+                expiresAt: expiresAt
+            )
+        case "warning", "waiting", "approval", "question", "wait", "等待", "需要审批", "需要回答":
+            return ClosedNotchVisualMascotPreview(
+                activityState: .approval,
+                status: .warning,
+                expression: .automatic,
+                expiresAt: expiresAt
+            )
+        default:
+            return nil
+        }
     }
 
     // MARK: - Sizing
@@ -540,6 +690,19 @@ struct NotchView: View {
             .onAppear {
                 musicStore.start()
                 obsidianTaskStore.start()
+                installVisualMascotPreviewObserverIfNeeded()
+            }
+            .onDisappear {
+                removeVisualMascotPreviewObserver()
+            }
+            .onChange(of: settings.obsidianDailyTasksEnabled) { _, _ in
+                obsidianTaskStore.reloadConfiguration()
+            }
+            .onChange(of: settings.obsidianDailyDirectoryPath) { _, _ in
+                obsidianTaskStore.reloadConfiguration()
+            }
+            .onChange(of: settings.obsidianDailyFilenamePattern) { _, _ in
+                obsidianTaskStore.reloadConfiguration()
             }
     }
 
@@ -632,14 +795,25 @@ struct NotchView: View {
 
     /// Whether to show the expanded closed state (processing, pending permission, or waiting for input)
     private var showClosedActivity: Bool {
-        isProcessing || closedActivityState != .idle
+        if activeVisualMascotPreview != nil {
+            return effectiveClosedActivityState != .idle
+        }
+        return isProcessing || effectiveClosedActivityState != .idle
     }
 
     private var shouldShowClosedMusicNotes: Bool {
-        viewModel.status != .opened
+        if activeVisualMascotPreview?.expression == .music {
+            return viewModel.status != .opened && !viewModel.isDetachmentGestureActive
+        }
+
+        return viewModel.status != .opened
             && !viewModel.isDetachmentGestureActive
-            && closedActivityState == .idle
+            && effectiveClosedActivityState == .idle
             && musicStore.track?.isPlaying == true
+    }
+
+    private var closedCodexMascotExpression: CodexMascotExpression {
+        activeVisualMascotPreview?.expression ?? (shouldShowClosedMusicNotes ? .music : .automatic)
     }
 
     /// Keep the closed notch footprint stable and always show the leading icon.
@@ -703,7 +877,7 @@ struct NotchView: View {
                                     status: closedMascotStatus,
                                     size: petIconSize,
                                     showsIdleSleepOverlay: !shouldShowClosedMusicNotes,
-                                    codexExpression: shouldShowClosedMusicNotes ? .music : .automatic
+                                    codexExpression: closedCodexMascotExpression
                                 )
                                 .matchedGeometryEffect(id: "pet", in: activityNamespace, isSource: showsClosedLeadingIcon)
                                 .frame(width: sideWidth)
@@ -719,8 +893,8 @@ struct NotchView: View {
                                         .zIndex(2)
                                 }
 
-                                if closedActivityState != .idle {
-                                    ClosedNotchStatusIndicator(state: closedActivityState, alignment: .leading)
+                                if effectiveClosedActivityState != .idle {
+                                    ClosedNotchStatusIndicator(state: effectiveClosedActivityState, alignment: .leading)
                                         .frame(width: closedStatusIndicatorWidth, alignment: .leading)
                                         .offset(
                                             x: closedStatusIndicatorOverlayOffset.width,
@@ -753,7 +927,9 @@ struct NotchView: View {
                     // Attention is already represented by the main status indicator.
                     if viewModel.status != .opened {
                         ZStack {
-                            if closedActivityState == .thinking, activeSessionCount > 0 {
+                            if activeVisualMascotPreview == nil,
+                               effectiveClosedActivityState == .thinking,
+                               activeSessionCount > 0 {
                                 SessionCountIndicator(
                                     count: activeSessionCount,
                                     rightShift: closedSessionCountRightShift
@@ -778,7 +954,7 @@ struct NotchView: View {
     }
 
     private var closedLeadingContentLeftShift: CGFloat {
-        0
+        viewModel.hasPhysicalNotch ? 12 : 0
     }
 
     private var closedStatusIndicatorLeftShift: CGFloat {
@@ -792,13 +968,9 @@ struct NotchView: View {
     private var closedStatusIndicatorOverlayOffset: CGSize {
         let notchAvoidanceShift: CGFloat = viewModel.hasPhysicalNotch ? -petIconSize * 0.34 : 0
 
-        switch closedActivityState {
-        case .thinking:
-            return CGSize(width: petIconSize * 0.92 + notchAvoidanceShift, height: petIconSize * 0.02)
-        case .finished:
-            return CGSize(width: petIconSize * 0.86 + notchAvoidanceShift, height: -petIconSize * 0.10)
-        case .approval, .question:
-            return CGSize(width: petIconSize * 0.84 + notchAvoidanceShift, height: -petIconSize * 0.08)
+        switch effectiveClosedActivityState {
+        case .thinking, .finished, .approval, .question, .failed:
+            return CGSize(width: petIconSize * 1.38 + notchAvoidanceShift, height: petIconSize * 0.02)
         case .idle:
             return .zero
         }
@@ -817,7 +989,11 @@ struct NotchView: View {
     }
 
     private var closedLeadingWidth: CGFloat {
-        sideWidth + closedStatusIndicatorWidth + closedMusicIndicatorWidth + closedMascotLeftReserve
+        sideWidth
+            + closedStatusIndicatorWidth
+            + closedMusicIndicatorWidth
+            + closedMascotLeftReserve
+            + max(0, closedLeadingContentLeftShift)
     }
 
     private var closedMascotLeftReserve: CGFloat {
@@ -859,14 +1035,16 @@ struct NotchView: View {
     private var closedStatusIndicatorWidth: CGFloat {
         guard viewModel.status != .opened else { return 0 }
 
-        switch closedActivityState {
+        switch effectiveClosedActivityState {
         case .idle:
             return 0
         case .thinking:
-            return 44
+            return 52
         case .finished:
             return 24
         case .approval, .question:
+            return 24
+        case .failed:
             return 24
         }
     }
@@ -874,7 +1052,9 @@ struct NotchView: View {
     @ViewBuilder
     private var closedCenterContent: some View {
         HStack {
-            if closedActivityState == .idle, let message = closedCenterMessage {
+            if activeVisualMascotPreview == nil,
+               effectiveClosedActivityState == .idle,
+               let message = closedCenterMessage {
                 Text(message)
                     .font(.system(size: 10.5, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.white.opacity(showClosedActivity ? 0.9 : 0.74))
@@ -1907,7 +2087,7 @@ struct NotchView: View {
             )
             previousTaskErrorIds = Set(
                 instances.flatMap { session in
-                    session.completedErrorToolIDs.map { "\(session.sessionId):\($0)" }
+                    session.notificationFailureEventIDs.map { "\(session.sessionId):\($0)" }
                 }
             )
             previousResourceLimitIds = Set(
@@ -1937,13 +2117,13 @@ struct NotchView: View {
         let newCompletedIds = Set(completedSessions.map(\.stableId))
         let newTaskErrorIds = Set(
             instances.flatMap { session in
-                session.completedErrorToolIDs.map { "\(session.sessionId):\($0)" }
+                session.notificationFailureEventIDs.map { "\(session.sessionId):\($0)" }
             }
         )
         let newResourceLimitIds = Set(resourceLimitedSessions.map(\.stableId))
         let errorDeltaIds = newTaskErrorIds.subtracting(previousTaskErrorIds)
         let errorSessions = instances.filter { session in
-            session.completedErrorToolIDs.contains { errorDeltaIds.contains("\(session.sessionId):\($0)") }
+            session.notificationFailureEventIDs.contains { errorDeltaIds.contains("\(session.sessionId):\($0)") }
         }
         let completionDeltaIds = newCompletedIds.subtracting(previousCompletionSoundIds)
         let newlyCompletedSessions = completedSessions.filter { session in
@@ -1971,6 +2151,14 @@ struct NotchView: View {
         let isNewProcessing = hasFreshSoundCandidate(newlyProcessingSessions)
 
         if isNewTaskError {
+            presentVisualMascotPreview(
+                ClosedNotchVisualMascotPreview(
+                    activityState: .failed,
+                    status: .warning,
+                    expression: .failed,
+                    expiresAt: Date().addingTimeInterval(Self.closedTaskErrorVisualDuration)
+                )
+            )
             playEventSoundIfNeeded(.taskError, sessions: freshSoundCandidates(from: errorSessions))
         } else if isNewResourceLimit {
             playEventSoundIfNeeded(.resourceLimit, sessions: freshSoundCandidates(from: newlyResourceLimitedSessions))
@@ -2236,12 +2424,24 @@ private struct IslandPanelSwitchButton: View {
     }
 }
 
+private struct ClosedNotchVisualMascotPreview {
+    let activityState: ClosedNotchActivityState
+    let status: MascotStatus
+    let expression: CodexMascotExpression
+    let expiresAt: Date
+
+    var isExpired: Bool {
+        Date() >= expiresAt
+    }
+}
+
 private enum ClosedNotchActivityState: Equatable {
     case idle
     case thinking
     case finished
     case approval
     case question
+    case failed
 
     var tint: Color {
         switch self {
@@ -2255,6 +2455,8 @@ private enum ClosedNotchActivityState: Equatable {
             return TerminalColors.amber
         case .question:
             return TerminalColors.prompt
+        case .failed:
+            return Color(red: 1.0, green: 0.24, blue: 0.20)
         }
     }
 
@@ -2270,6 +2472,8 @@ private enum ClosedNotchActivityState: Equatable {
             return "需要审批"
         case .question:
             return "需要回答"
+        case .failed:
+            return "执行失败"
         }
     }
 }
@@ -2279,30 +2483,35 @@ private struct ClosedNotchStatusIndicator: View {
     var alignment: Alignment = .center
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var animationStart: TimeInterval = Date().timeIntervalSinceReferenceDate
 
     var body: some View {
         Group {
             if reduceMotion {
-                statusContent(time: 0)
+                statusContent(time: 0, elapsed: 10)
             } else {
                 TimelineView(.periodic(from: .now, by: 1.0 / 24.0)) { context in
-                    statusContent(time: context.date.timeIntervalSinceReferenceDate)
+                    let time = context.date.timeIntervalSinceReferenceDate
+                    statusContent(time: time, elapsed: max(0, time - animationStart))
                 }
             }
         }
+        .onChange(of: state) { _, _ in
+            animationStart = Date().timeIntervalSinceReferenceDate
+        }
     }
 
-    private func statusContent(time: TimeInterval) -> some View {
+    private func statusContent(time: TimeInterval, elapsed: TimeInterval) -> some View {
         Group {
             switch state {
             case .thinking:
-                thinkingBubble(time: time)
+                thinkingDots()
             case .finished:
-                checkBadge(time: time)
-            case .approval:
-                exclamationBadge(time: time)
-            case .question:
-                questionBadge(time: time)
+                checkBadge(elapsed: elapsed)
+            case .approval, .question:
+                exclamationBadge(time: time, elapsed: elapsed)
+            case .failed:
+                failedSpiralBadge(elapsed: elapsed)
             case .idle:
                 EmptyView()
             }
@@ -2311,133 +2520,69 @@ private struct ClosedNotchStatusIndicator: View {
         .accessibilityLabel(state.accessibilityLabel)
     }
 
-    private func thinkingBubble(time: TimeInterval) -> some View {
-        let lift = reduceMotion ? CGFloat.zero : CGFloat(sin(time * 2.0) * 0.8)
-
-        return HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { index in
-                let phase = time * 2.4 + Double(index) * 0.62
-                Circle()
-                    .fill(Color.black.opacity(0.50 + (sin(phase) + 1) * 0.16))
-                    .frame(width: 3.8, height: 3.8)
-                    .scaleEffect(reduceMotion ? 1 : 0.90 + (sin(phase) + 1) * 0.08)
-            }
-        }
-        .frame(width: 34, height: 20)
-        .background(
-            ClosedHandDrawnBubbleShape()
-                .fill(Color.white)
-        )
-        .overlay(
-            ClosedHandDrawnBubbleShape()
-                .stroke(Color(red: 0.12, green: 0.08, blue: 0.14), lineWidth: 2.2)
-        )
-        .overlay(
-            ClosedHandDrawnBubbleShape()
-                .stroke(Color(red: 0.12, green: 0.08, blue: 0.14).opacity(0.38), lineWidth: 1.1)
-                .rotationEffect(.degrees(-1.6))
-        )
-        .offset(y: lift)
+    private func thinkingDots() -> some View {
+        ThinkingDotsIndicator(color: .white, dotSize: 4, spacing: 3)
+            .frame(width: 18, height: 8)
     }
 
-    private func exclamationBadge(time: TimeInterval) -> some View {
-        let lift = reduceMotion ? CGFloat.zero : CGFloat(sin(time * 2.2) * 0.7)
+    private func checkBadge(elapsed: TimeInterval) -> some View {
+        let entrance = reduceMotion ? CGFloat(1) : CGFloat(clamped(elapsed / 0.16))
+        let draw = reduceMotion ? CGFloat(1) : CGFloat(clamped((elapsed - 0.04) / 0.24))
+
+        return ClosedCheckmarkShape()
+            .trim(from: 0, to: draw)
+            .stroke(
+                Color.white,
+                style: StrokeStyle(lineWidth: 3.1, lineCap: .round, lineJoin: .round)
+            )
+            .frame(width: 18, height: 18)
+            .opacity(entrance)
+            .scaleEffect(0.92 + entrance * 0.08)
+    }
+
+    private func exclamationBadge(time: TimeInterval, elapsed: TimeInterval) -> some View {
+        let entrance = reduceMotion ? CGFloat(1) : CGFloat(clamped(elapsed / 0.22))
+        let breathe = reduceMotion ? CGFloat(1) : CGFloat(0.55 + 0.45 * pulse(time, cycle: 1.35))
+        let scale = reduceMotion ? CGFloat(1) : CGFloat(0.92 + 0.08 * entrance + 0.02 * sin(elapsed * .pi * 2 / 1.35) * Double(entrance))
 
         return Text("!")
-            .font(.system(size: 12, weight: .black, design: .rounded))
-            .foregroundStyle(Color(red: 0.16, green: 0.11, blue: 0.10))
-            .frame(width: 19, height: 19)
-            .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(Color(red: 1.0, green: 0.76, blue: 0.24))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .stroke(Color(red: 0.13, green: 0.08, blue: 0.13), lineWidth: 2.2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .stroke(Color(red: 0.13, green: 0.08, blue: 0.13).opacity(0.32), lineWidth: 1.0)
-                    .rotationEffect(.degrees(1.8))
-            )
-            .offset(y: lift)
-    }
-
-    private func checkBadge(time: TimeInterval) -> some View {
-        let scale = reduceMotion ? CGFloat(1) : CGFloat(0.98 + pulse(time, speed: 1.7) * 0.04)
-
-        return Image(systemName: "checkmark")
-            .font(.system(size: 11, weight: .black))
+            .font(.system(size: 18, weight: .black, design: .rounded))
             .foregroundStyle(Color.white)
-            .frame(width: 20, height: 20)
-            .background(
-                Circle()
-                    .fill(Color(red: 0.25, green: 0.86, blue: 0.48))
-            )
-            .overlay(
-                Circle()
-                    .stroke(Color(red: 0.12, green: 0.08, blue: 0.13), lineWidth: 2.2)
-            )
-            .overlay(
-                Circle()
-                    .stroke(Color(red: 0.12, green: 0.08, blue: 0.13).opacity(0.30), lineWidth: 1.0)
-                    .rotationEffect(.degrees(-2))
-            )
+            .frame(width: 18, height: 18)
+            .opacity(entrance * breathe)
             .scaleEffect(scale)
     }
 
-    private func questionBadge(time: TimeInterval) -> some View {
-        let lift = reduceMotion ? CGFloat.zero : CGFloat(sin(time * 2.0) * 0.7)
+    private func failedSpiralBadge(elapsed: TimeInterval) -> some View {
+        let entrance = reduceMotion ? CGFloat(1) : CGFloat(clamped(elapsed / 0.22))
+        let rotation = reduceMotion ? 0 : elapsed * 360 / 3.2
+        let scale = reduceMotion ? CGFloat(1) : CGFloat(0.98 + sin(elapsed * .pi * 2 / 3.2) * 0.035)
 
-        return Text("?")
-            .font(.system(size: 11, weight: .black, design: .rounded))
-            .foregroundStyle(Color(red: 0.16, green: 0.11, blue: 0.10))
-            .frame(width: 19, height: 19)
-            .background(
-                Circle()
-                    .fill(Color.white)
-            )
-            .overlay(
-                Circle()
-                    .stroke(Color(red: 0.13, green: 0.08, blue: 0.13), lineWidth: 2.2)
-            )
-            .offset(y: lift)
+        return Image("ClosedFailureSpiral")
+            .resizable()
+            .renderingMode(.template)
+            .foregroundStyle(Color.white)
+            .frame(width: 18, height: 18)
+            .opacity(0.48 + 0.52 * entrance)
+            .rotationEffect(.degrees(rotation))
+            .scaleEffect(scale)
     }
 
-    private func pulse(_ time: TimeInterval, speed: Double) -> Double {
-        (sin(time * speed) + 1) / 2
+    private func pulse(_ time: TimeInterval, cycle: TimeInterval) -> Double {
+        (sin(time * .pi * 2 / cycle) + 1) / 2
+    }
+
+    private func clamped(_ value: TimeInterval) -> TimeInterval {
+        min(1, max(0, value))
     }
 }
 
-private struct ClosedHandDrawnBubbleShape: Shape {
+private struct ClosedCheckmarkShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX + rect.width * 0.16, y: rect.minY + rect.height * 0.16))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX - rect.width * 0.13, y: rect.minY + rect.height * 0.18),
-            control: CGPoint(x: rect.midX, y: rect.minY - rect.height * 0.06)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX - rect.width * 0.04, y: rect.midY),
-            control: CGPoint(x: rect.maxX + rect.width * 0.03, y: rect.minY + rect.height * 0.24)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX - rect.width * 0.18, y: rect.maxY - rect.height * 0.13),
-            control: CGPoint(x: rect.maxX + rect.width * 0.03, y: rect.maxY - rect.height * 0.18)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX + rect.width * 0.15, y: rect.maxY - rect.height * 0.12),
-            control: CGPoint(x: rect.midX, y: rect.maxY + rect.height * 0.06)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX + rect.width * 0.04, y: rect.midY),
-            control: CGPoint(x: rect.minX - rect.width * 0.03, y: rect.maxY - rect.height * 0.22)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX + rect.width * 0.16, y: rect.minY + rect.height * 0.16),
-            control: CGPoint(x: rect.minX - rect.width * 0.02, y: rect.minY + rect.height * 0.20)
-        )
-        path.closeSubpath()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.23, y: rect.minY + rect.height * 0.52))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.41, y: rect.minY + rect.height * 0.69))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.79, y: rect.minY + rect.height * 0.30))
         return path
     }
 }

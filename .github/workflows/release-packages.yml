@@ -163,7 +163,7 @@ jobs:
           set -euo pipefail
 
           cert_path="$RUNNER_TEMP/build_certificate.p12"
-          keychain_path="$RUNNER_TEMP/ping-island-signing.keychain-db"
+          keychain_path="$RUNNER_TEMP/jade-cub-signing.keychain-db"
 
           if ! echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$cert_path" 2>/dev/null; then
             echo "$BUILD_CERTIFICATE_BASE64" | base64 -D > "$cert_path"
@@ -215,22 +215,22 @@ jobs:
 
       - name: Build signed DMG and ZIP packages
         env:
-          PING_ISLAND_BUILD_DIR: ${{ github.workspace }}/build/release
-          PING_ISLAND_RELEASE_DIR: ${{ github.workspace }}/releases/signed
-          PING_ISLAND_DMG_BACKGROUND_SOURCE: ${{ github.workspace }}/docs/images/ping-island-dmg-installer-background.png
-          PING_ISLAND_DMG_LOGO_SOURCE: ${{ github.workspace }}/docs/images/ping-island-icon-transparent.svg
-          PING_ISLAND_KEYCHAIN_PATH: ${{ runner.temp }}/ping-island-signing.keychain-db
-          PING_ISLAND_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          PING_ISLAND_NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
-          PING_ISLAND_NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          PING_ISLAND_NOTARY_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          JADE_CUB_BUILD_DIR: ${{ github.workspace }}/build/release
+          JADE_CUB_RELEASE_DIR: ${{ github.workspace }}/releases/signed
+          JADE_CUB_DMG_BACKGROUND_SOURCE: ${{ github.workspace }}/docs/images/jade-cub-dmg-installer-background.png
+          JADE_CUB_DMG_LOGO_SOURCE: ${{ github.workspace }}/PingIsland/Assets.xcassets/AppIcon.appiconset/icon_1024x1024.png
+          JADE_CUB_KEYCHAIN_PATH: ${{ runner.temp }}/jade-cub-signing.keychain-db
+          JADE_CUB_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          JADE_CUB_NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+          JADE_CUB_NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          JADE_CUB_NOTARY_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
 
           if [ "${{ steps.validate.outputs.sparkle_enabled }}" = "true" ]; then
-            export PING_ISLAND_GENERATE_APPCAST=1
-            export PING_ISLAND_SPARKLE_PRIVATE_KEY_PATH="${{ steps.sparkle_private_key.outputs.path }}"
+            export JADE_CUB_GENERATE_APPCAST=1
+            export JADE_CUB_SPARKLE_PRIVATE_KEY_PATH="${{ steps.sparkle_private_key.outputs.path }}"
           fi
 
           ./scripts/package-release.sh
@@ -265,7 +265,7 @@ jobs:
             exit 1
           fi
 
-          app_path="build/release/export/Ping Island.app"
+          app_path="build/release/export/Jade Cub.app"
           if [ "${#linux_bridge_assets[@]}" -lt 1 ]; then
             echo "::error::Expected at least one Linux bridge asset in releases/bridge, found ${#linux_bridge_assets[@]}"
             exit 1
@@ -331,13 +331,13 @@ jobs:
             echo "has_notes_asset=$has_notes_asset"
             echo "appcast_path=$appcast_path"
             echo "has_appcast=$has_appcast"
-            echo "release_title=Ping Island $RELEASE_TAG"
+            echo "release_title=Jade Cub $RELEASE_TAG"
           } >> "$GITHUB_OUTPUT"
 
       - name: Upload signed macOS packages artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PingIsland-signed-packages-${{ steps.meta.outputs.version }}
+          name: JadeCub-signed-packages-${{ steps.meta.outputs.version }}
           path: |
             ${{ steps.meta.outputs.dmg_path }}
             ${{ steps.meta.outputs.zip_path }}
@@ -452,4 +452,4 @@ jobs:
           rm -f Config/LocalSecrets.xcconfig
           rm -f "$RUNNER_TEMP/build_certificate.p12"
           rm -f "$RUNNER_TEMP/sparkle_private_ed_key"
-          security delete-keychain "$RUNNER_TEMP/ping-island-signing.keychain-db" || true
+          security delete-keychain "$RUNNER_TEMP/jade-cub-signing.keychain-db" || true

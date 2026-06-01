@@ -4,6 +4,7 @@ import Foundation
 
 enum NotificationEvent: String, CaseIterable, Identifiable {
     case processingStarted
+    case approvalRequired
     case attentionRequired
     case taskCompleted
     case taskError
@@ -15,6 +16,8 @@ enum NotificationEvent: String, CaseIterable, Identifiable {
         switch self {
         case .processingStarted:
             return "开始处理"
+        case .approvalRequired:
+            return "审批"
         case .attentionRequired:
             return "需要介入"
         case .taskCompleted:
@@ -30,8 +33,10 @@ enum NotificationEvent: String, CaseIterable, Identifiable {
         switch self {
         case .processingStarted:
             return "会话开始处理、运行工具或进入阶段切换。"
+        case .approvalRequired:
+            return "等待你批准命令、文件或权限请求。"
         case .attentionRequired:
-            return "等待审批、回答问题或其他需要你接手的时刻。"
+            return "等待回答问题或其他需要你接手的时刻。"
         case .taskCompleted:
             return "当前处理结束，回到等待你下一步输入。"
         case .taskError:
@@ -45,6 +50,8 @@ enum NotificationEvent: String, CaseIterable, Identifiable {
         switch self {
         case .processingStarted:
             return .tink
+        case .approvalRequired:
+            return .sosumi
         case .attentionRequired:
             return .glass
         case .taskCompleted:
@@ -60,6 +67,8 @@ enum NotificationEvent: String, CaseIterable, Identifiable {
         switch self {
         case .processingStarted:
             return ["task.acknowledge", "session.start"]
+        case .approvalRequired:
+            return ["permission.required", "input.required"]
         case .attentionRequired:
             return ["input.required"]
         case .taskCompleted:
@@ -75,6 +84,8 @@ enum NotificationEvent: String, CaseIterable, Identifiable {
         switch self {
         case .processingStarted:
             return .processingStarted
+        case .approvalRequired:
+            return .approvalRequired
         case .attentionRequired:
             return .attentionRequired
         case .taskCompleted:
@@ -83,6 +94,45 @@ enum NotificationEvent: String, CaseIterable, Identifiable {
             return .taskError
         case .resourceLimit:
             return .resourceLimit
+        }
+    }
+}
+
+@MainActor
+enum NotificationSoundPlaybackGate {
+    private static let defaultDuplicateWindow: TimeInterval = 10 * 60
+    private static let approvalDuplicateWindow: TimeInterval = 1
+    private static var recentPlaybackByKey: [String: Date] = [:]
+
+    static func shouldPlay(event: NotificationEvent, sessions: [SessionState]) -> Bool {
+        guard !sessions.isEmpty else { return false }
+
+        let now = Date()
+        recentPlaybackByKey = recentPlaybackByKey.filter { _, playedAt in
+            now.timeIntervalSince(playedAt) < defaultDuplicateWindow
+        }
+
+        let duplicateWindow = duplicateWindow(for: event)
+        let keys = sessions.map { "\(event.rawValue)#\($0.stableId)" }
+        let hasUnplayedSession = keys.contains { key in
+            guard let playedAt = recentPlaybackByKey[key] else { return true }
+            return now.timeIntervalSince(playedAt) >= duplicateWindow
+        }
+
+        guard hasUnplayedSession else { return false }
+
+        for key in keys {
+            recentPlaybackByKey[key] = now
+        }
+        return true
+    }
+
+    private static func duplicateWindow(for event: NotificationEvent) -> TimeInterval {
+        switch event {
+        case .approvalRequired:
+            return approvalDuplicateWindow
+        case .processingStarted, .attentionRequired, .taskCompleted, .taskError, .resourceLimit:
+            return defaultDuplicateWindow
         }
     }
 }
@@ -121,6 +171,7 @@ enum Island8BitSound: String {
     case clientStartup = "island8bit_client_startup"
     case releaseNotesSuccess = "island8bit_release_notes_success"
     case processingStarted = "island8bit_processing_started"
+    case approvalRequired = "8bit_approval"
     case attentionRequired = "island8bit_attention_required"
     case taskCompleted = "island8bit_task_completed"
     case taskError = "island8bit_task_error"
@@ -134,6 +185,8 @@ enum Island8BitSound: String {
             return "Win Jingle"
         case .processingStarted:
             return "Menu Select"
+        case .approvalRequired:
+            return "Approval Alert"
         case .attentionRequired:
             return "Item Pickup"
         case .taskCompleted:

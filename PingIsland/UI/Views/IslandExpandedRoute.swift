@@ -14,6 +14,8 @@ enum IslandExpandedTrigger: Equatable {
 
 enum IslandExpandedRoute: Equatable {
     case sessionList
+    case shelf
+    case music
     case hoverDashboard
     case attentionNotification(SessionState)
     case completionNotification(SessionCompletionNotification)
@@ -30,6 +32,12 @@ enum IslandExpandedRouteResolver {
     ) -> IslandExpandedRoute {
         if case .chat(let session) = contentType {
             return .chat(session)
+        }
+        if case .shelf = contentType {
+            return .shelf
+        }
+        if case .music = contentType {
+            return .music
         }
 
         switch (surface, trigger) {

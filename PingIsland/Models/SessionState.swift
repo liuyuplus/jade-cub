@@ -76,6 +76,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     /// All chat items for this session (replaces ChatHistoryManager.histories)
     var chatItems: [ChatHistoryItem]
+    var isChatHistoryCompact: Bool
 
     // MARK: - Tool Tracking
 
@@ -85,6 +86,10 @@ struct SessionState: Equatable, Identifiable, Sendable {
     /// Tool IDs that completed with an actual execution error.
     /// Used for event-specific notifications such as CESP `task.error`.
     var completedErrorToolIDs: Set<String>
+
+    /// Session-level failures that are not tied to one tool call, such as
+    /// Codex transport loss or a runtime crash.
+    var sessionFailureEventIDs: Set<String>
 
     // MARK: - Subagent State
 
@@ -109,6 +114,12 @@ struct SessionState: Equatable, Identifiable, Sendable {
     // MARK: - Identifiable
 
     var id: String { sessionId }
+
+    nonisolated var notificationFailureEventIDs: Set<String> {
+        var ids = Set(completedErrorToolIDs.map { "tool:\($0)" })
+        ids.formUnion(sessionFailureEventIDs.map { "session:\($0)" })
+        return ids
+    }
 
     // MARK: - Initialization
 
@@ -136,8 +147,10 @@ struct SessionState: Equatable, Identifiable, Sendable {
         autoApprovePermissions: Bool = false,
         phase: SessionPhase = .idle,
         chatItems: [ChatHistoryItem] = [],
+        isChatHistoryCompact: Bool = false,
         toolTracker: ToolTracker = ToolTracker(),
         completedErrorToolIDs: Set<String> = [],
+        sessionFailureEventIDs: Set<String> = [],
         subagentState: SubagentState = SubagentState(),
         conversationInfo: ConversationInfo = ConversationInfo(
             summary: nil, lastMessage: nil, lastMessageRole: nil,
@@ -170,8 +183,10 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.autoApprovePermissions = autoApprovePermissions
         self.phase = phase
         self.chatItems = chatItems
+        self.isChatHistoryCompact = isChatHistoryCompact
         self.toolTracker = toolTracker
         self.completedErrorToolIDs = completedErrorToolIDs
+        self.sessionFailureEventIDs = sessionFailureEventIDs
         self.subagentState = subagentState
         self.conversationInfo = conversationInfo
         self.needsClearReconciliation = needsClearReconciliation

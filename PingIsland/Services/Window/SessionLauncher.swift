@@ -14,7 +14,7 @@ import os.log
 actor SessionLauncher {
     static let shared = SessionLauncher()
 
-    nonisolated private static let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "SessionLauncher")
+    nonisolated private static let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "SessionLauncher")
     nonisolated private static let ideWindowRoutingDelayNanoseconds: UInt64 = 250_000_000
     nonisolated private static let ideSessionActivationDelayNanoseconds: UInt64 = 1_000_000_000
     nonisolated private static let ideWindowReadyPollNanoseconds: UInt64 = 50_000_000
@@ -134,14 +134,7 @@ actor SessionLauncher {
         }
 
         let candidateBundleIdentifiers = clientApplicationBundleIdentifiers(for: session)
-        let resolvedLaunchURL = session.clientInfo.launchURL
-            ?? session.clientInfo.bundleIdentifier.flatMap {
-                SessionClientInfo.appLaunchURL(
-                    bundleIdentifier: $0,
-                    sessionId: session.sessionId,
-                    workspacePath: session.cwd
-                )
-            }
+        let resolvedLaunchURL = await preferredLaunchURL(for: session)
 
         for bundleIdentifier in candidateBundleIdentifiers {
             if await activateClientFallbackApplication(bundleIdentifier: bundleIdentifier) {
@@ -366,14 +359,7 @@ actor SessionLauncher {
             bundleIdentifier: detectedBundleIdentifier,
             appName: appName
         )
-        let resolvedLaunchURL = session.clientInfo.launchURL
-            ?? session.clientInfo.bundleIdentifier.flatMap {
-                SessionClientInfo.appLaunchURL(
-                    bundleIdentifier: $0,
-                    sessionId: session.sessionId,
-                    workspacePath: session.cwd
-                )
-            }
+        let resolvedLaunchURL = await preferredLaunchURL(for: session)
 
         // Codex thread deep links are more precise than workspace routing.
         if Self.shouldPrioritizeDirectLaunchURL(for: session.clientInfo),
@@ -436,6 +422,28 @@ actor SessionLauncher {
 
     nonisolated static func shouldPrioritizeDirectLaunchURL(for clientInfo: SessionClientInfo) -> Bool {
         clientInfo.kind == .codexApp
+    }
+
+    private func preferredLaunchURL(for session: SessionState) async -> String? {
+        if Self.shouldPrioritizeDirectLaunchURL(for: session.clientInfo) {
+            let resolvedThreadId = await SessionStore.shared.resolvedCodexSessionId(for: session.sessionId)
+            let bundleIdentifier = session.clientInfo.bundleIdentifier ?? "com.openai.codex"
+
+            return SessionClientInfo.appLaunchURL(
+                bundleIdentifier: bundleIdentifier,
+                sessionId: resolvedThreadId,
+                workspacePath: session.cwd
+            ) ?? session.clientInfo.launchURL
+        }
+
+        return session.clientInfo.launchURL
+            ?? session.clientInfo.bundleIdentifier.flatMap {
+                SessionClientInfo.appLaunchURL(
+                    bundleIdentifier: $0,
+                    sessionId: session.sessionId,
+                    workspacePath: session.cwd
+                )
+            }
     }
 
     private func activateIDEWindow(

@@ -9,7 +9,7 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "Hooks")
+private let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "Hooks")
 
 private actor HermesHookDebugStore {
     static let shared = HermesHookDebugStore()
@@ -899,7 +899,7 @@ class HookSocketServer {
     private var acceptSource: DispatchSourceRead?
     private var eventHandler: HookEventHandler?
     private var permissionFailureHandler: PermissionFailureHandler?
-    private let queue = DispatchQueue(label: "com.wudanwu.pingisland.socket", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "io.github.liuyuplus.jadecub.socket", qos: .userInitiated)
 
     private var pendingPermissions: [String: [PendingPermission]] = [:]
     private let permissionsLock = NSLock()

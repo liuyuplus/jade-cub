@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import os.log
 
 actor CodexAppServerMonitor {
@@ -21,6 +22,7 @@ actor CodexAppServerMonitor {
         let isEphemeral: Bool
         let updatedAt: Date?
         let placeholderCandidate: Bool
+        let internalContextCandidate: Bool
     }
 
     private enum PendingRequestKind {
@@ -38,14 +40,31 @@ actor CodexAppServerMonitor {
         let requestedPermissions: [String: Any]?
     }
 
-    private let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "Codex")
+    private enum TransportKind {
+        case webSocket
+        case stdio
+    }
+
+    private let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "io.github.liuyuplus.jadecub",
+        category: "Codex"
+    )
     private let port = 41241
-    private let threadListRefreshInterval: Duration = .seconds(15)
+    private let idleThreadListRefreshInterval: Duration = .seconds(15)
+    private let activeThreadListRefreshInterval: Duration = .seconds(3)
+    private let rolloutFallbackScanInterval: Duration = .seconds(3)
+    private let rolloutFallbackFreshness: TimeInterval = 30 * 60
 
     private var process: Process?
     private var websocket: URLSessionWebSocketTask?
+    private var stdioInput: FileHandle?
+    private var transportKind: TransportKind?
     private var receiveTask: Task<Void, Never>?
+    private var stderrDrainTask: Task<Void, Never>?
     private var threadListRefreshTask: Task<Void, Never>?
+    private var rolloutFallbackScanTask: Task<Void, Never>?
+    private var networkMonitor: NWPathMonitor?
+    private let networkMonitorQueue = DispatchQueue(label: "io.github.liuyuplus.jadecub.codex-network")
     private var requestSequence = 0
     private var pendingResponses: [String: CheckedContinuation<[String: Any], Error>] = [:]
     private var pendingRequestsByThread: [String: PendingRequest] = [:]
@@ -56,7 +75,10 @@ actor CodexAppServerMonitor {
     private init() {}
 
     func start() async {
-        if websocket != nil {
+        startNetworkMonitorIfNeeded()
+        ensureRolloutFallbackScanLoop()
+
+        if isConnected {
             ensureThreadListRefreshLoop()
             return
         }
@@ -76,40 +98,47 @@ actor CodexAppServerMonitor {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["app-server", "--listen", "ws://127.0.0.1:\(port)"]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
+        process.arguments = ["app-server", "--listen", "stdio://"]
 
-        do {
-            try process.run()
-            self.process = process
-        } catch {
-            logger.error("Failed to launch codex app-server: \(error.localizedDescription, privacy: .public)")
+        if await startStdioServer(process: process) {
+            ensureThreadListRefreshLoop()
+            return
         }
 
-        for _ in 0..<12 {
-            try? await Task.sleep(for: .milliseconds(250))
-            if await connectToServer() {
-                ensureThreadListRefreshLoop()
-                return
-            }
-        }
-
-        logger.error("Unable to connect to Codex app-server on port \(self.port)")
+        logger.error("Unable to initialize Codex app-server monitor")
     }
 
     func stop() {
+        rolloutFallbackScanTask?.cancel()
+        rolloutFallbackScanTask = nil
+        networkMonitor?.cancel()
+        networkMonitor = nil
+        closeTransport(terminateProcess: true)
+        pendingRequestsByThread.removeAll()
+        lastThreadDiagnostics.removeAll()
+    }
+
+    private var isConnected: Bool {
+        websocket != nil || stdioInput != nil
+    }
+
+    private func closeTransport(terminateProcess: Bool) {
         threadListRefreshTask?.cancel()
         threadListRefreshTask = nil
         receiveTask?.cancel()
         receiveTask = nil
+        stderrDrainTask?.cancel()
+        stderrDrainTask = nil
         websocket?.cancel(with: .goingAway, reason: nil)
         websocket = nil
-        process?.terminate()
+        stdioInput?.closeFile()
+        stdioInput = nil
+        transportKind = nil
+        if terminateProcess {
+            process?.terminationHandler = nil
+            process?.terminate()
+        }
         process = nil
-        pendingRequestsByThread.removeAll()
-        lastThreadDiagnostics.removeAll()
-
         for (_, continuation) in pendingResponses {
             continuation.resume(throwing: CancellationError())
         }
@@ -131,6 +160,16 @@ actor CodexAppServerMonitor {
                 "scope": forSession ? "session" : "turn"
             ]
         case .userInput:
+            guard pending.intervention.kind == .approval,
+                  let answers = Self.defaultApprovalAnswers(
+                      for: pending.intervention,
+                      approving: true
+                  ) else {
+                return
+            }
+            await sendUserInputResponse(id: pending.requestId, answers: answers)
+            pendingRequestsByThread.removeValue(forKey: threadId)
+            await SessionStore.shared.resolveCodexIntervention(sessionId: threadId, nextPhase: .processing)
             return
         }
 
@@ -154,6 +193,16 @@ actor CodexAppServerMonitor {
                 "scope": "turn"
             ]
         case .userInput:
+            guard pending.intervention.kind == .approval,
+                  let answers = Self.defaultApprovalAnswers(
+                      for: pending.intervention,
+                      approving: false
+                  ) else {
+                return
+            }
+            await sendUserInputResponse(id: pending.requestId, answers: answers)
+            pendingRequestsByThread.removeValue(forKey: threadId)
+            await SessionStore.shared.resolveCodexIntervention(sessionId: threadId, nextPhase: .processing)
             return
         }
 
@@ -178,7 +227,7 @@ actor CodexAppServerMonitor {
     }
 
     func readThread(threadId: String, includeTurns: Bool = true) async throws -> CodexThreadSnapshot {
-        if websocket == nil {
+        if !isConnected {
             await start()
         }
 
@@ -190,8 +239,21 @@ actor CodexAppServerMonitor {
             ]
         )
 
-        guard let thread = response["thread"] as? [String: Any],
-              let snapshot = parseThreadSnapshot(thread) else {
+        guard let thread = response["thread"] as? [String: Any] else {
+            throw NSError(domain: "CodexAppServer", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid thread/read response"
+            ])
+        }
+        if Self.shouldFilterInternalContextThreadForUI(thread),
+           let threadId = thread["id"] as? String {
+            logger.notice("Filtering internal Codex context thread/read thread=\(threadId, privacy: .public)")
+            await SessionStore.shared.process(.sessionArchived(sessionId: threadId))
+            throw NSError(domain: "CodexAppServer", code: 6, userInfo: [
+                NSLocalizedDescriptionKey: "Filtered internal Codex context thread"
+            ])
+        }
+
+        guard let snapshot = parseThreadSnapshot(thread) else {
             throw NSError(domain: "CodexAppServer", code: 3, userInfo: [
                 NSLocalizedDescriptionKey: "Invalid thread/read response"
             ])
@@ -202,7 +264,7 @@ actor CodexAppServerMonitor {
     }
 
     func startThread(cwd: String, model: String? = nil) async throws -> CodexThreadSnapshot {
-        if websocket == nil {
+        if !isConnected {
             await start()
         }
 
@@ -236,7 +298,7 @@ actor CodexAppServerMonitor {
     }
 
     func resumeThread(threadId: String, cwd: String? = nil, model: String? = nil) async throws -> CodexThreadSnapshot {
-        if websocket == nil {
+        if !isConnected {
             await start()
         }
 
@@ -267,7 +329,7 @@ actor CodexAppServerMonitor {
     }
 
     func archiveThread(threadId: String) async throws {
-        if websocket == nil {
+        if !isConnected {
             await start()
         }
 
@@ -283,7 +345,7 @@ actor CodexAppServerMonitor {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        if websocket == nil {
+        if !isConnected {
             await start()
         }
 
@@ -318,7 +380,7 @@ actor CodexAppServerMonitor {
     func refreshThreadDiscovery(threadId: String) async {
         guard !threadId.isEmpty else { return }
 
-        if websocket == nil {
+        if !isConnected {
             await start()
         }
 
@@ -339,28 +401,14 @@ actor CodexAppServerMonitor {
         let websocket = URLSession.shared.webSocketTask(with: url)
         websocket.resume()
         self.websocket = websocket
+        transportKind = .webSocket
 
         receiveTask = Task { [weak self] in
             await self?.receiveLoop()
         }
 
         do {
-            _ = try await sendRequest(
-                method: "initialize",
-                params: [
-                    "clientInfo": [
-                        "name": "Island",
-                        "title": "Island",
-                        "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-                    ],
-                    "capabilities": [
-                        "experimentalApi": true
-                    ]
-                ]
-            )
-
-            await refreshThreadList(reason: "connect")
-
+            try await initializeTransport()
             return true
         } catch {
             logger.debug("Codex websocket initialize failed: \(error.localizedDescription, privacy: .public)")
@@ -368,8 +416,64 @@ actor CodexAppServerMonitor {
             receiveTask = nil
             websocket.cancel(with: .goingAway, reason: nil)
             self.websocket = nil
+            transportKind = nil
             return false
         }
+    }
+
+    private func startStdioServer(process: Process) async -> Bool {
+        let inputPipe = Pipe()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+
+        process.standardInput = inputPipe
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        process.terminationHandler = { [weak self] _ in
+            Task {
+                await self?.handleTransportClosed()
+            }
+        }
+
+        do {
+            try process.run()
+        } catch {
+            logger.error("Failed to launch codex app-server: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+
+        self.process = process
+        stdioInput = inputPipe.fileHandleForWriting
+        transportKind = .stdio
+        startStdioReceiveLoop(from: outputPipe.fileHandleForReading)
+        startStderrDrainLoop(from: errorPipe.fileHandleForReading)
+
+        do {
+            try await initializeTransport()
+            return true
+        } catch {
+            logger.error("Codex stdio app-server initialize failed: \(error.localizedDescription, privacy: .public)")
+            closeTransport(terminateProcess: true)
+            return false
+        }
+    }
+
+    private func initializeTransport() async throws {
+        _ = try await sendRequest(
+            method: "initialize",
+            params: [
+                "clientInfo": [
+                    "name": "Island",
+                    "title": "Island",
+                    "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+                ],
+                "capabilities": [
+                    "experimentalApi": true
+                ]
+            ]
+        )
+
+        await refreshThreadList(reason: "connect")
     }
 
     private func receiveLoop() async {
@@ -385,10 +489,113 @@ actor CodexAppServerMonitor {
             }
         }
 
-        websocket?.cancel(with: .goingAway, reason: nil)
-        websocket = nil
-        threadListRefreshTask?.cancel()
-        threadListRefreshTask = nil
+        handleTransportClosed()
+    }
+
+    private func startStdioReceiveLoop(from fileHandle: FileHandle) {
+        receiveTask = Task.detached(priority: .userInitiated) { [weak self] in
+            var buffer = Data()
+
+            while !Task.isCancelled {
+                let chunk: Data?
+                do {
+                    chunk = try fileHandle.read(upToCount: 64 * 1024)
+                } catch {
+                    await self?.logStdioReadError(error)
+                    break
+                }
+
+                guard let chunk, !chunk.isEmpty else { break }
+                buffer.append(chunk)
+
+                while let newlineIndex = buffer.firstIndex(of: 10) {
+                    var lineData = Data(buffer[..<newlineIndex])
+                    buffer.removeSubrange(...newlineIndex)
+                    if lineData.last == 13 {
+                        lineData.removeLast()
+                    }
+                    guard !lineData.isEmpty else { continue }
+                    await self?.handleStdioLine(lineData)
+                }
+            }
+
+            if !buffer.isEmpty {
+                if buffer.last == 13 {
+                    buffer.removeLast()
+                }
+                await self?.handleStdioLine(buffer)
+            }
+
+            await self?.handleTransportClosed()
+        }
+    }
+
+    private func startStderrDrainLoop(from fileHandle: FileHandle) {
+        stderrDrainTask = Task.detached(priority: .utility) { [weak self] in
+            while !Task.isCancelled {
+                let chunk: Data?
+                do {
+                    chunk = try fileHandle.read(upToCount: 64 * 1024)
+                } catch {
+                    break
+                }
+
+                guard let chunk, !chunk.isEmpty else { break }
+                await self?.logStderrOutput(chunk)
+            }
+        }
+    }
+
+    private func handleTransportClosed() {
+        let wasConnected = isConnected
+        closeTransport(terminateProcess: false)
+        guard wasConnected else { return }
+
+        Task {
+            let markedCount = await SessionStore.shared.markCodexFailureForActiveSessions(
+                eventID: "codex-transport-closed-\(Int(Date().timeIntervalSince1970))",
+                reason: "Codex app-server connection closed while Codex was active."
+            )
+            if markedCount > 0 {
+                logger.notice("Marked active Codex sessions failed after app-server transport closed count=\(markedCount, privacy: .public)")
+            }
+        }
+    }
+
+    private func startNetworkMonitorIfNeeded() {
+        guard networkMonitor == nil else { return }
+
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .unsatisfied else { return }
+            Task {
+                await self?.handleNetworkUnavailable()
+            }
+        }
+        monitor.start(queue: networkMonitorQueue)
+        networkMonitor = monitor
+    }
+
+    private func handleNetworkUnavailable() async {
+        let markedCount = await SessionStore.shared.markCodexFailureForActiveSessions(
+            eventID: "codex-network-unavailable-\(Int(Date().timeIntervalSince1970))",
+            reason: "Network became unavailable while Codex was active."
+        )
+        if markedCount > 0 {
+            logger.notice("Marked active Codex sessions failed after network became unavailable count=\(markedCount, privacy: .public)")
+        }
+    }
+
+    private func logStdioReadError(_ error: Error) {
+        logger.debug("Codex stdio read failed: \(error.localizedDescription, privacy: .public)")
+    }
+
+    private func logStderrOutput(_ data: Data) {
+        guard let message = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty else {
+            return
+        }
+        logger.debug("Codex app-server stderr: \(message.prefix(200), privacy: .public)")
     }
 
     private func ensureThreadListRefreshLoop() {
@@ -405,15 +612,21 @@ actor CodexAppServerMonitor {
         }
 
         while !Task.isCancelled {
-            try? await Task.sleep(for: threadListRefreshInterval)
+            let interval = await currentThreadListRefreshInterval()
+            try? await Task.sleep(for: interval)
             guard !Task.isCancelled else { break }
-            guard websocket != nil else { break }
+            guard isConnected else { break }
             await refreshThreadList(reason: "poll")
         }
     }
 
+    private func currentThreadListRefreshInterval() async -> Duration {
+        let hasActiveCodexSession = await SessionStore.shared.hasActiveCodexAppServerPollingSession()
+        return hasActiveCodexSession ? activeThreadListRefreshInterval : idleThreadListRefreshInterval
+    }
+
     private func refreshThreadList(reason: String) async {
-        guard websocket != nil else { return }
+        guard isConnected else { return }
 
         do {
             let response = try await sendRequest(
@@ -427,6 +640,127 @@ actor CodexAppServerMonitor {
                 "Codex thread/list refresh failed reason=\(reason, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
             )
         }
+    }
+
+    private func ensureRolloutFallbackScanLoop() {
+        guard rolloutFallbackScanTask == nil else { return }
+
+        rolloutFallbackScanTask = Task { [weak self] in
+            await self?.runRolloutFallbackScanLoop()
+        }
+    }
+
+    private func runRolloutFallbackScanLoop() async {
+        defer {
+            rolloutFallbackScanTask = nil
+        }
+
+        while !Task.isCancelled {
+            await refreshRecentRolloutSnapshots(reason: "fallback-scan")
+            try? await Task.sleep(for: rolloutFallbackScanInterval)
+        }
+    }
+
+    private func refreshRecentRolloutSnapshots(reason: String) async {
+        let fileURLs = Self.recentRolloutFileURLs(
+            freshness: rolloutFallbackFreshness,
+            referenceDate: Date()
+        )
+        guard !fileURLs.isEmpty else { return }
+
+        var syncedCount = 0
+        for fileURL in fileURLs {
+            guard !Task.isCancelled,
+                  let threadId = Self.threadIdFromRolloutFileName(fileURL.lastPathComponent) else {
+                continue
+            }
+
+            let clientInfo = SessionClientInfo(
+                kind: .codexApp,
+                profileID: "codex-app",
+                name: "Codex App",
+                bundleIdentifier: resolvedClientBundleIdentifier ?? "com.openai.codex",
+                origin: "desktop",
+                sessionFilePath: fileURL.path
+            )
+            guard let snapshot = await CodexRolloutParser.shared.parseThread(
+                threadId: threadId,
+                fallbackCwd: "/",
+                clientInfo: clientInfo,
+                historyMode: .summary
+            ) else {
+                continue
+            }
+
+            let hasExistingSession = await SessionStore.shared.containsSession(snapshot.threadId)
+            guard hasExistingSession || snapshot.phase.isActive || snapshot.phase.needsAttention else {
+                continue
+            }
+
+            await SessionStore.shared.syncCodexThreadSnapshot(snapshot, ingress: .codexAppServer)
+            syncedCount += 1
+        }
+
+        if syncedCount > 0 {
+            logger.info(
+                "Codex rollout fallback synced count=\(syncedCount, privacy: .public) reason=\(reason, privacy: .public)"
+            )
+        }
+    }
+
+    nonisolated static func threadIdFromRolloutFileName(_ fileName: String) -> String? {
+        guard fileName.hasPrefix("rollout-"), fileName.hasSuffix(".jsonl") else {
+            return nil
+        }
+
+        let baseName = String(fileName.dropLast(".jsonl".count))
+        let pattern = #"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#
+        guard let range = baseName.range(
+            of: pattern,
+            options: [.regularExpression, .caseInsensitive]
+        ) else {
+            return nil
+        }
+        return String(baseName[range])
+    }
+
+    private nonisolated static func recentRolloutFileURLs(
+        freshness: TimeInterval,
+        referenceDate: Date
+    ) -> [URL] {
+        let sessionsRoot = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex")
+            .appendingPathComponent("sessions", isDirectory: true)
+        let resourceKeys: [URLResourceKey] = [
+            .contentModificationDateKey,
+            .isRegularFileKey
+        ]
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: sessionsRoot,
+            includingPropertiesForKeys: resourceKeys,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var candidates: [(url: URL, modifiedAt: Date)] = []
+        for case let fileURL as URL in enumerator {
+            guard fileURL.lastPathComponent.hasPrefix("rollout-"),
+                  fileURL.pathExtension == "jsonl",
+                  let values = try? fileURL.resourceValues(forKeys: Set(resourceKeys)),
+                  values.isRegularFile == true,
+                  let modifiedAt = values.contentModificationDate,
+                  referenceDate.timeIntervalSince(modifiedAt) <= freshness else {
+                continue
+            }
+            candidates.append((fileURL, modifiedAt))
+        }
+
+        return candidates
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(20)
+            .map(\.url)
     }
 
     private func handle(_ message: URLSessionWebSocketTask.Message) async {
@@ -444,6 +778,18 @@ actor CodexAppServerMonitor {
             return
         }
 
+        await handle(json: json)
+    }
+
+    private func handleStdioLine(_ data: Data) async {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return
+        }
+
+        await handle(json: json)
+    }
+
+    private func handle(json: [String: Any]) async {
         if let method = json["method"] as? String {
             if let idValue = json["id"] {
                 await handleServerRequest(
@@ -482,17 +828,42 @@ actor CodexAppServerMonitor {
         case "thread/status/changed":
             let threadId = (params["threadId"] as? String) ?? ""
             guard !threadId.isEmpty else { return }
-            let statusType = ((params["status"] as? [String: Any])?["type"] as? String) ?? "unknown"
+            let status = Self.statusPayload(from: params["status"], extraFieldsFrom: params)
+            let statusType = (status?["type"] as? String) ?? "unknown"
+            let intervention = effectiveIntervention(
+                threadId: threadId,
+                status: status,
+                existing: pendingRequestsByThread[threadId]?.intervention
+            )
             logger.info(
                 "Codex status changed thread=\(threadId, privacy: .public) statusType=\(statusType, privacy: .public)"
             )
             let phase = phaseFromCodexStatus(
-                params["status"] as? [String: Any],
+                status,
                 threadId: threadId,
-                intervention: pendingRequestsByThread[threadId]?.intervention
+                intervention: intervention
             )
+            let failureInfo = Self.failureStatusInfo(from: status)
+            let failureMetadata = Self.failureMetadata(from: failureInfo)
             let hasExistingSession = await SessionStore.shared.containsSession(threadId)
             if !hasExistingSession, pendingRequestsByThread[threadId] == nil {
+                if phase.isActive || phase.needsAttention || failureInfo != nil {
+                    await SessionStore.shared.upsertCodexSession(
+                        sessionId: threadId,
+                        name: nil,
+                        preview: failureInfo?.reason,
+                        cwd: nil,
+                        phase: phase,
+                        intervention: intervention,
+                        clientInfo: SessionClientInfo.codexApp(threadId: threadId),
+                        metadata: failureMetadata
+                    )
+                    Task { [weak self] in
+                        try? await Task.sleep(for: .milliseconds(300))
+                        await self?.refreshThreadDiscovery(threadId: threadId)
+                    }
+                    return
+                }
                 logger.notice(
                     "Ignoring status-only update for unknown Codex thread=\(threadId, privacy: .public) statusType=\(statusType, privacy: .public)"
                 )
@@ -504,7 +875,8 @@ actor CodexAppServerMonitor {
                 preview: nil,
                 cwd: nil,
                 phase: phase,
-                intervention: pendingRequestsByThread[threadId]?.intervention
+                intervention: intervention,
+                metadata: failureMetadata
             )
 
         case "item/autoApprovalReview/started":
@@ -577,6 +949,7 @@ actor CodexAppServerMonitor {
                 questions: [],
                 supportsSessionScope: true,
                 metadata: [
+                    "source": "codex_app_server_request_approval",
                     "command": command,
                     "cwd": cwd ?? ""
                 ]
@@ -617,6 +990,7 @@ actor CodexAppServerMonitor {
                 questions: [],
                 supportsSessionScope: true,
                 metadata: [
+                    "source": "codex_app_server_request_approval",
                     "grantRoot": grantRoot ?? ""
                 ]
             )
@@ -656,7 +1030,9 @@ actor CodexAppServerMonitor {
                 options: [],
                 questions: [],
                 supportsSessionScope: true,
-                metadata: [:]
+                metadata: [
+                    "source": "codex_app_server_request_approval"
+                ]
             )
 
             pendingRequestsByThread[threadId] = PendingRequest(
@@ -685,18 +1061,24 @@ actor CodexAppServerMonitor {
             guard let threadId = params["threadId"] as? String else { return }
             let questions = parseQuestions(params["questions"] as? [[String: Any]] ?? [])
             let prompt = questions.first?.prompt ?? "Codex needs your input."
+            let isApprovalPrompt = Self.isApprovalLikeUserInput(questions: questions, prompt: prompt)
+            var metadata = [
+                "turnId": params["turnId"] as? String ?? "",
+                "itemId": params["itemId"] as? String ?? ""
+            ]
+            if isApprovalPrompt {
+                metadata["source"] = "codex_app_server_user_input_approval"
+                metadata["semanticRole"] = "approval"
+            }
             let intervention = SessionIntervention(
                 id: id,
-                kind: .question,
-                title: "Codex Needs Input",
+                kind: isApprovalPrompt ? .approval : .question,
+                title: isApprovalPrompt ? "Codex Requests Approval" : "Codex Needs Input",
                 message: prompt,
                 options: questions.first?.options ?? [],
                 questions: questions,
                 supportsSessionScope: false,
-                metadata: [
-                    "turnId": params["turnId"] as? String ?? "",
-                    "itemId": params["itemId"] as? String ?? ""
-                ]
+                metadata: metadata
             )
 
             pendingRequestsByThread[threadId] = PendingRequest(
@@ -712,7 +1094,14 @@ actor CodexAppServerMonitor {
                 name: nil,
                 preview: prompt,
                 cwd: nil,
-                phase: .waitingForInput,
+                phase: isApprovalPrompt
+                    ? .waitingForApproval(PermissionContext(
+                        toolUseId: params["itemId"] as? String ?? id,
+                        toolName: "approval",
+                        toolInput: nil,
+                        receivedAt: Date()
+                    ))
+                    : .waitingForInput,
                 intervention: intervention
             )
 
@@ -722,20 +1111,20 @@ actor CodexAppServerMonitor {
     }
 
     private func sendRequest(method: String, params: [String: Any]) async throws -> [String: Any] {
-        guard let websocket else {
+        guard isConnected else {
             throw NSError(domain: "CodexAppServer", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: "Websocket not connected"
+                NSLocalizedDescriptionKey: "Codex app-server transport not connected"
             ])
         }
 
         requestSequence += 1
         let id = String(requestSequence)
-        let payload: [String: Any] = [
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params
-        ]
+        let payload = Self.appServerRequestPayload(
+            id: id,
+            method: method,
+            params: params,
+            includeJSONRPCVersion: transportKind == .webSocket
+        )
 
         let message = try Self.webSocketTextMessage(from: payload)
 
@@ -743,7 +1132,7 @@ actor CodexAppServerMonitor {
             pendingResponses[id] = continuation
             Task {
                 do {
-                    try await websocket.send(.string(message))
+                    try await sendTransportMessage(message)
                 } catch {
                     if let continuation = pendingResponses.removeValue(forKey: id) {
                         continuation.resume(throwing: error)
@@ -754,22 +1143,59 @@ actor CodexAppServerMonitor {
     }
 
     private func sendResponse(id: String, result: [String: Any]) async {
-        guard let websocket else { return }
+        guard isConnected else { return }
 
-        let payload: [String: Any] = [
-            "jsonrpc": "2.0",
+        var payload: [String: Any] = [
             "id": id,
             "result": result
         ]
-
+        if transportKind == .webSocket {
+            payload["jsonrpc"] = "2.0"
+        }
         guard let message = try? Self.webSocketTextMessage(from: payload) else {
             return
         }
 
         do {
-            try await websocket.send(.string(message))
+            try await sendTransportMessage(message)
         } catch {
             logger.error("Failed to send Codex response: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func sendUserInputResponse(id: String, answers: [String: [String]]) async {
+        let formattedAnswers = answers.reduce(into: [String: Any]()) { partial, entry in
+            partial[entry.key] = ["answers": entry.value]
+        }
+
+        await sendResponse(
+            id: id,
+            result: ["answers": formattedAnswers]
+        )
+    }
+
+    private func sendTransportMessage(_ message: String) async throws {
+        switch transportKind {
+        case .webSocket:
+            guard let websocket else {
+                throw NSError(domain: "CodexAppServer", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: "Websocket not connected"
+                ])
+            }
+            try await websocket.send(.string(message))
+
+        case .stdio:
+            guard let stdioInput else {
+                throw NSError(domain: "CodexAppServer", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: "Stdio transport not connected"
+                ])
+            }
+            stdioInput.write(Data((message + "\n").utf8))
+
+        case .none:
+            throw NSError(domain: "CodexAppServer", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "Codex app-server transport not connected"
+            ])
         }
     }
 
@@ -796,17 +1222,52 @@ actor CodexAppServerMonitor {
         let preview = thread["preview"] as? String
         let cwd = thread["cwd"] as? String
         let clientInfo = makeClientInfo(from: thread, threadId: threadId)
-        let phase = phaseFromCodexStatus(
-            thread["status"] as? [String: Any],
+        let status = Self.statusPayload(from: thread["status"], extraFieldsFrom: thread)
+        var intervention = effectiveIntervention(
             threadId: threadId,
-            intervention: pendingRequestsByThread[threadId]?.intervention
+            status: status,
+            existing: pendingRequestsByThread[threadId]?.intervention
         )
+        var phase = phaseFromCodexStatus(
+            status,
+            threadId: threadId,
+            intervention: intervention
+        )
+        let failureInfo = Self.failureStatusInfo(from: status)
+        let failureMetadata = Self.failureMetadata(from: failureInfo)
+        if Self.textIndicatesTurnAbort(preview) {
+            intervention = nil
+            phase = .idle
+        }
         let diagnostics = Self.makeThreadDiagnosticsSnapshot(from: thread)
         recordThreadDiagnostics(diagnostics)
         let pathPresent = (thread["path"] as? String)?.isEmpty == false
 
+        if Self.shouldFilterInternalContextThreadForUI(thread) {
+            logger.notice(
+                "Filtering internal Codex context thread=\(threadId, privacy: .public) name=\((diagnostics.name ?? ""), privacy: .public) preview=\((diagnostics.preview ?? "").prefix(80), privacy: .public)"
+            )
+            await SessionStore.shared.process(.sessionArchived(sessionId: threadId))
+            return
+        }
+
+        if let rolloutSnapshot = await preferredRolloutSnapshot(
+            threadId: threadId,
+            cwd: cwd,
+            clientInfo: clientInfo,
+            appServerPhase: phase,
+            intervention: intervention,
+            status: status
+        ) {
+            logger.info(
+                "Codex rollout snapshot preferred thread=\(threadId, privacy: .public) appServerPhase=\(phase.description, privacy: .public) snapshotPhase=\(rolloutSnapshot.phase.description, privacy: .public) historyItems=\(rolloutSnapshot.historyItems.count, privacy: .public)"
+            )
+            await SessionStore.shared.syncCodexThreadSnapshot(rolloutSnapshot, ingress: .codexAppServer)
+            return
+        }
+
         logger.info(
-            "Codex ingest thread=\(threadId, privacy: .public) phase=\(String(describing: phase), privacy: .public) namePresent=\(name?.isEmpty == false, privacy: .public) previewPresent=\(preview?.isEmpty == false, privacy: .public) cwd=\((cwd ?? ""), privacy: .public) pathPresent=\(pathPresent, privacy: .public) ephemeral=\(diagnostics.isEphemeral, privacy: .public) placeholderCandidate=\(diagnostics.placeholderCandidate, privacy: .public)"
+            "Codex ingest thread=\(threadId, privacy: .public) phase=\(String(describing: phase), privacy: .public) namePresent=\(name?.isEmpty == false, privacy: .public) previewPresent=\(preview?.isEmpty == false, privacy: .public) cwd=\((cwd ?? ""), privacy: .public) pathPresent=\(pathPresent, privacy: .public) ephemeral=\(diagnostics.isEphemeral, privacy: .public) placeholderCandidate=\(diagnostics.placeholderCandidate, privacy: .public) internalContextCandidate=\(diagnostics.internalContextCandidate, privacy: .public)"
         )
         if diagnostics.placeholderCandidate {
             logger.notice("Codex ingest placeholder candidate thread=\(threadId, privacy: .public)")
@@ -818,10 +1279,65 @@ actor CodexAppServerMonitor {
             preview: preview,
             cwd: cwd,
             phase: phase,
-            intervention: pendingRequestsByThread[threadId]?.intervention,
+            intervention: intervention,
             clientInfo: clientInfo,
-            activityAt: diagnostics.updatedAt
+            activityAt: diagnostics.updatedAt,
+            metadata: failureMetadata
         )
+    }
+
+    private func preferredRolloutSnapshot(
+        threadId: String,
+        cwd: String?,
+        clientInfo: SessionClientInfo,
+        appServerPhase: SessionPhase,
+        intervention: SessionIntervention?,
+        status: [String: Any]?
+    ) async -> CodexThreadSnapshot? {
+        guard Self.shouldPreferRolloutSnapshot(
+            appServerPhase: appServerPhase,
+            intervention: intervention,
+            status: status,
+            clientInfo: clientInfo
+        ) else {
+            return nil
+        }
+
+        let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackCwd = trimmedCwd?.isEmpty == false ? (cwd ?? "/") : "/"
+        return await CodexRolloutParser.shared.parseThread(
+            threadId: threadId,
+            fallbackCwd: fallbackCwd,
+            clientInfo: clientInfo,
+            historyMode: .summary
+        )
+    }
+
+    nonisolated static func shouldPreferRolloutSnapshot(
+        appServerPhase: SessionPhase,
+        intervention: SessionIntervention?,
+        status: [String: Any]?,
+        clientInfo: SessionClientInfo
+    ) -> Bool {
+        guard clientInfo.sessionFilePath?.isEmpty == false else {
+            return false
+        }
+        guard case .none = intervention else {
+            return false
+        }
+        guard !appServerPhase.isActive, !appServerPhase.needsAttention else {
+            return false
+        }
+        guard failureStatusInfo(from: status) == nil else {
+            return false
+        }
+
+        guard let statusType = status?["type"] as? String else {
+            return appServerPhase == .idle
+        }
+
+        let normalizedStatus = normalizedStatusToken(statusType)
+        return normalizedStatus == "notloaded" || appServerPhase == .idle
     }
 
     private func recordThreadDiagnostics(_ snapshot: ThreadDiagnosticsSnapshot) {
@@ -864,9 +1380,18 @@ actor CodexAppServerMonitor {
         let preview = normalize(thread["preview"] as? String)
         let cwd = normalize(thread["cwd"] as? String)
         let path = normalize(thread["path"] as? String)
-        let statusType = (thread["status"] as? [String: Any])?["type"] as? String
+        let status = statusPayload(from: thread["status"], extraFieldsFrom: thread)
+        let statusType = status?["type"] as? String
         let isEphemeral = thread["ephemeral"] as? Bool ?? false
         let updatedAt = date(from: thread["updatedAt"])
+        let internalContextCandidate = isLikelyInternalContextThreadForUI(
+            threadId: threadId,
+            name: name,
+            preview: preview,
+            cwd: cwd,
+            path: path,
+            status: status
+        )
         let placeholderCandidate =
             !isEphemeral
             && (name?.isEmpty != false)
@@ -886,8 +1411,93 @@ actor CodexAppServerMonitor {
             statusType: statusType,
             isEphemeral: isEphemeral,
             updatedAt: updatedAt,
-            placeholderCandidate: placeholderCandidate
+            placeholderCandidate: placeholderCandidate,
+            internalContextCandidate: internalContextCandidate
         )
+    }
+
+    static func shouldFilterInternalContextThreadForUI(_ thread: [String: Any]) -> Bool {
+        let diagnostics = makeThreadDiagnosticsSnapshot(from: thread)
+        return diagnostics.internalContextCandidate
+    }
+
+    private static func isLikelyInternalContextThreadForUI(
+        threadId: String,
+        name: String?,
+        preview: String?,
+        cwd: String?,
+        path: String?,
+        status: [String: Any]?
+    ) -> Bool {
+        if statusIndicatesWaitingOnApproval(status) || statusIndicatesWaitingOnUserInput(status) {
+            return false
+        }
+
+        let textLooksInternal = containsInternalContextMarker(name)
+            || containsInternalContextMarker(preview)
+        guard textLooksInternal else {
+            return false
+        }
+
+        let weakName = name == nil
+            || isUUIDLike(name)
+            || containsInternalContextMarker(name)
+        let weakLocation = path == nil
+            || path?.isEmpty == true
+            || isInternalCodexContextPath(cwd)
+            || isInternalCodexContextPath(path)
+            || isUUIDLike(lastPathComponent(cwd))
+        let idBackedDisplay = isUUIDLike(threadId)
+            && (weakName || weakLocation)
+
+        return weakName || weakLocation || idBackedDisplay
+    }
+
+    private static func containsInternalContextMarker(_ text: String?) -> Bool {
+        guard let text else { return false }
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        guard !normalized.isEmpty else { return false }
+        let markers = [
+            "<environment_context",
+            "# instructions (read first)",
+            "# od core directives",
+            "<permissions instructions>",
+            "<app-context>",
+            "<skills_instructions>",
+            "<collaboration_mode>"
+        ]
+        return markers.contains { normalized.contains($0) }
+    }
+
+    private static func isInternalCodexContextPath(_ text: String?) -> Bool {
+        guard let text else { return false }
+        let normalized = text
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+        return normalized.contains("/library/application support/")
+            || normalized.contains("/.codex/")
+            || normalized.contains("/private/var/folders/")
+            || normalized.contains("/var/folders/")
+    }
+
+    private static func isUUIDLike(_ text: String?) -> Bool {
+        guard let text else { return false }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return trimmed.range(
+            of: #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private static func lastPathComponent(_ text: String?) -> String? {
+        guard let text, !text.isEmpty else { return nil }
+        return URL(fileURLWithPath: text).lastPathComponent
     }
 
     private func parseThreadSnapshot(_ thread: [String: Any]) -> CodexThreadSnapshot? {
@@ -895,12 +1505,17 @@ actor CodexAppServerMonitor {
 
         let createdAt = date(fromUnixTimestamp: thread["createdAt"]) ?? Date()
         let updatedAt = date(fromUnixTimestamp: thread["updatedAt"]) ?? createdAt
-        let status = thread["status"] as? [String: Any]
+        let status = Self.statusPayload(from: thread["status"], extraFieldsFrom: thread)
         let snapshotClientInfo = makeClientInfo(from: thread, threadId: threadId)
+        let statusIntervention = effectiveIntervention(
+            threadId: threadId,
+            status: status,
+            existing: pendingRequestsByThread[threadId]?.intervention
+        )
         let phase = phaseFromCodexStatus(
             status,
             threadId: threadId,
-            intervention: pendingRequestsByThread[threadId]?.intervention
+            intervention: statusIntervention
         )
         let turns = thread["turns"] as? [[String: Any]] ?? []
 
@@ -1021,6 +1636,15 @@ actor CodexAppServerMonitor {
             firstUserMessage: firstUserMessage,
             lastUserMessageDate: lastUserMessageDate
         )
+        let indicatesTurnAbort = Self.textIndicatesTurnAbort(latestUserText ?? conversationInfo.lastMessage ?? preview)
+        let finalIntervention = indicatesTurnAbort ? nil : (inferredIntervention ?? statusIntervention)
+        let finalPhase: SessionPhase = if indicatesTurnAbort {
+            .idle
+        } else if inferredIntervention != nil {
+            .waitingForInput
+        } else {
+            phase
+        }
 
         return CodexThreadSnapshot(
             threadId: threadId,
@@ -1032,10 +1656,10 @@ actor CodexAppServerMonitor {
             subagentNickname: subagentMetadata?.nickname,
             subagentRole: subagentMetadata?.role,
             clientInfo: snapshotClientInfo,
-            intervention: inferredIntervention,
+            intervention: finalIntervention,
             createdAt: createdAt,
             updatedAt: updatedAt,
-            phase: inferredIntervention != nil ? .waitingForInput : phase,
+            phase: finalPhase,
             historyItems: historyItems,
             conversationInfo: conversationInfo,
             latestTurnId: latestTurnId,
@@ -1088,6 +1712,238 @@ actor CodexAppServerMonitor {
         )
     }
 
+    private func effectiveIntervention(
+        threadId: String,
+        status: [String: Any]?,
+        existing: SessionIntervention?
+    ) -> SessionIntervention? {
+        if let existing {
+            return existing
+        }
+        guard Self.statusIndicatesWaitingOnApproval(status) else {
+            return nil
+        }
+        return SessionIntervention(
+            id: "codex-status-approval-\(threadId)",
+            kind: .approval,
+            title: "Codex Requests Approval",
+            message: "Codex Desktop is waiting for approval.",
+            options: [],
+            questions: [],
+            supportsSessionScope: false,
+            metadata: [
+                "source": "codex_app_server_status_waiting_approval",
+                "responseMode": "external_only"
+            ]
+        )
+    }
+
+    private static func statusPayload(
+        from rawStatus: Any?,
+        extraFieldsFrom source: [String: Any]? = nil
+    ) -> [String: Any]? {
+        var payload: [String: Any]
+        switch rawStatus {
+        case let dictionary as [String: Any]:
+            payload = dictionary
+        case let string as String:
+            payload = [
+                "type": string,
+                "label": string
+            ]
+        case let number as NSNumber:
+            payload = [
+                "type": number.stringValue,
+                "label": number.stringValue
+            ]
+        default:
+            payload = [:]
+        }
+
+        if let source {
+            for key in [
+                "label",
+                "statusLabel",
+                "status_label",
+                "statusText",
+                "status_text",
+                "badge",
+                "state",
+                "phase"
+            ] {
+                guard key != "status", let value = source[key] else { continue }
+                payload[key] = value
+            }
+        }
+
+        return payload.isEmpty ? nil : payload
+    }
+
+    static func statusIndicatesWaitingOnApproval(_ status: [String: Any]?) -> Bool {
+        guard let status else { return false }
+        if normalizedStatusTokens(from: status).contains("waitingonapproval") {
+            return true
+        }
+        let searchableText = statusSearchText(from: status)
+        return searchableText.contains("等待审批")
+            || searchableText.contains("等待批准")
+            || searchableText.contains("需要审批")
+            || searchableText.contains("需要批准")
+            || searchableText.contains("等待用户审批")
+            || searchableText.contains("waitingapproval")
+            || searchableText.contains("waitingforapproval")
+            || searchableText.contains("waitingonapproval")
+            || searchableText.contains("approvalrequired")
+            || searchableText.contains("needsapproval")
+            || searchableText.contains("requiresapproval")
+    }
+
+    static func statusIndicatesWaitingOnUserInput(_ status: [String: Any]?) -> Bool {
+        guard let status else { return false }
+        if normalizedStatusTokens(from: status).contains("waitingonuserinput") {
+            return true
+        }
+        let searchableText = statusSearchText(from: status)
+        return searchableText.contains("等待输入")
+            || searchableText.contains("等待回复")
+            || searchableText.contains("需要输入")
+            || searchableText.contains("需要回复")
+            || searchableText.contains("waitingonuserinput")
+            || searchableText.contains("waitingforinput")
+            || searchableText.contains("needsinput")
+            || searchableText.contains("requiresinput")
+    }
+
+    static func failureStatusInfo(from status: [String: Any]?) -> (eventID: String, reason: String)? {
+        guard let status else { return nil }
+        guard !statusIndicatesWaitingOnApproval(status),
+              !statusIndicatesWaitingOnUserInput(status) else {
+            return nil
+        }
+
+        let normalizedType = (status["type"] as? String).map(normalizedStatusToken(_:))
+        let tokens = normalizedStatusTokens(from: status)
+        let failureTokens: Set<String> = [
+            "aborted",
+            "connectionlost",
+            "crashed",
+            "disconnected",
+            "error",
+            "failed",
+            "failure",
+            "networkerror",
+            "offline",
+            "systemerror",
+            "terminated"
+        ]
+
+        let hasFailureToken = normalizedType.map(failureTokens.contains) == true
+            || !tokens.intersection(failureTokens).isEmpty
+        guard hasFailureToken else { return nil }
+
+        let reason = preferredFailureMessage(from: status)
+            ?? "Codex reported a failure."
+        let typeComponent = normalizedType ?? "failure"
+        let reasonComponent = String(normalizedStatusToken(reason).prefix(80))
+        return (
+            eventID: "codex-status-\(typeComponent)-\(reasonComponent)",
+            reason: reason
+        )
+    }
+
+    private static func failureMetadata(
+        from failureInfo: (eventID: String, reason: String)?
+    ) -> [String: String] {
+        guard let failureInfo else { return [:] }
+        return [
+            "failureEventID": failureInfo.eventID,
+            "failureReason": failureInfo.reason,
+            "reason": failureInfo.reason
+        ]
+    }
+
+    private static func preferredFailureMessage(from status: [String: Any]) -> String? {
+        for key in ["message", "error", "reason", "detail", "label", "description"] {
+            if let value = normalizedFailureString(status[key]) {
+                return value
+            }
+        }
+
+        for key in ["state", "status", "payload"] {
+            if let dictionary = status[key] as? [String: Any],
+               let value = preferredFailureMessage(from: dictionary) {
+                return value
+            }
+        }
+
+        return nil
+    }
+
+    private static func normalizedFailureString(_ value: Any?) -> String? {
+        guard let string = value as? String else { return nil }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func textIndicatesTurnAbort(_ text: String?) -> Bool {
+        guard let text else { return false }
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.contains("<turn_aborted>")
+            || normalized.contains("turn_aborted")
+            || normalized.contains("the user interrupt")
+            || normalized.contains("user interrupted")
+    }
+
+    private static func statusFlags(from status: [String: Any]) -> Set<String> {
+        var flags = Set<String>()
+        for key in ["activeFlags", "flags"] {
+            if let values = status[key] as? [String] {
+                flags.formUnion(values)
+            }
+        }
+        if let values = status["active_flags"] as? [String] {
+            flags.formUnion(values)
+        }
+        return flags
+    }
+
+    private static func normalizedStatusTokens(from status: [String: Any]) -> Set<String> {
+        Set(statusStringValues(from: status).map(normalizedStatusToken(_:)))
+    }
+
+    private static func statusSearchText(from status: [String: Any]) -> String {
+        statusStringValues(from: status)
+            .map(normalizedStatusToken(_:))
+            .joined(separator: " ")
+    }
+
+    private static func statusStringValues(from value: Any?) -> [String] {
+        switch value {
+        case let string as String:
+            return [string]
+        case let number as NSNumber:
+            return [number.stringValue]
+        case let array as [Any]:
+            return array.flatMap(statusStringValues(from:))
+        case let dictionary as [String: Any]:
+            return dictionary.flatMap { key, value in
+                [key] + statusStringValues(from: value)
+            }
+        default:
+            return []
+        }
+    }
+
+    private static func normalizedStatusToken(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "/", with: "")
+            .lowercased()
+    }
+
     private func phaseFromCodexStatus(
         _ status: [String: Any]?,
         threadId: String,
@@ -1102,6 +1958,19 @@ actor CodexAppServerMonitor {
             ))
         }
 
+        if Self.statusIndicatesWaitingOnApproval(status) {
+            return .waitingForApproval(PermissionContext(
+                toolUseId: intervention?.id ?? "codex-approval-\(threadId)",
+                toolName: intervention?.title ?? "approval",
+                toolInput: nil,
+                receivedAt: Date()
+            ))
+        }
+
+        if Self.statusIndicatesWaitingOnUserInput(status) {
+            return .waitingForInput
+        }
+
         guard let type = status?["type"] as? String else {
             if intervention?.kind == .question {
                 return .waitingForInput
@@ -1109,8 +1978,20 @@ actor CodexAppServerMonitor {
             return .idle
         }
 
-        if type == "active" {
-            let flags = status?["activeFlags"] as? [String] ?? []
+        let normalizedType = Self.normalizedStatusToken(type)
+        let activeStatusTypes: Set<String> = [
+            "active",
+            "busy",
+            "generating",
+            "inprogress",
+            "processing",
+            "running",
+            "runningturn",
+            "turnrunning"
+        ]
+
+        if activeStatusTypes.contains(normalizedType) {
+            let flags = Self.statusFlags(from: status ?? [:])
             if flags.contains("waitingOnApproval") {
                 return .waitingForApproval(PermissionContext(
                     toolUseId: intervention?.id ?? "codex-approval-\(threadId)",
@@ -1125,7 +2006,7 @@ actor CodexAppServerMonitor {
             return .processing
         }
 
-        if type == "systemError" {
+        if normalizedType == "systemerror" {
             return .idle
         }
 
@@ -1243,6 +2124,123 @@ actor CodexAppServerMonitor {
         }
     }
 
+    private static func isApprovalLikeUserInput(
+        questions: [SessionInterventionQuestion],
+        prompt: String
+    ) -> Bool {
+        let combinedText = ([prompt] + questions.flatMap { question -> [String] in
+            [
+                question.header,
+                question.prompt,
+                question.detail
+            ].compactMap(\.self) + question.options.flatMap { option in
+                [option.title, option.detail].compactMap(\.self)
+            }
+        })
+        .joined(separator: " ")
+        .lowercased()
+
+        let hasApprovalDecisionOption = questions.contains { question in
+            hasPositiveApprovalOption(question.options)
+                && hasNegativeApprovalOption(question.options)
+        }
+
+        guard hasApprovalDecisionOption else {
+            return false
+        }
+
+        let approvalCues = [
+            "是否允许",
+            "是否准许",
+            "是否批准",
+            "是否审批",
+            "要关闭",
+            "要删除",
+            "要覆盖",
+            "要替换",
+            "要运行",
+            "要执行",
+            "允许",
+            "批准",
+            "approval",
+            "approve",
+            "permission",
+            "allow",
+            "run command",
+            "execute command",
+            "kill ",
+            "rm ",
+            "delete",
+            "overwrite",
+            "replace"
+        ]
+
+        return approvalCues.contains { combinedText.contains($0) }
+    }
+
+    private static func defaultApprovalAnswers(
+        for intervention: SessionIntervention,
+        approving: Bool
+    ) -> [String: [String]]? {
+        let questions = intervention.resolvedQuestions
+        guard !questions.isEmpty else { return nil }
+
+        var answers: [String: [String]] = [:]
+        for question in questions {
+            guard let option = approving
+                ? positiveApprovalOption(in: question.options)
+                : negativeApprovalOption(in: question.options) else {
+                return nil
+            }
+            answers[question.id] = [option.title]
+        }
+        return answers
+    }
+
+    private static func hasPositiveApprovalOption(_ options: [SessionInterventionOption]) -> Bool {
+        positiveApprovalOption(in: options) != nil
+    }
+
+    private static func hasNegativeApprovalOption(_ options: [SessionInterventionOption]) -> Bool {
+        negativeApprovalOption(in: options) != nil
+    }
+
+    private static func positiveApprovalOption(in options: [SessionInterventionOption]) -> SessionInterventionOption? {
+        options.first { option in
+            let label = normalizedDecisionLabel(option.title)
+            return label == "yes"
+                || label == "allow"
+                || label == "approve"
+                || label == "accept"
+                || label == "是"
+                || label.hasPrefix("是，")
+                || label.hasPrefix("是,")
+                || label.hasPrefix("允许")
+                || label.hasPrefix("批准")
+        }
+    }
+
+    private static func negativeApprovalOption(in options: [SessionInterventionOption]) -> SessionInterventionOption? {
+        options.first { option in
+            let label = normalizedDecisionLabel(option.title)
+            return label == "no"
+                || label == "deny"
+                || label == "reject"
+                || label == "decline"
+                || label == "否"
+                || label.hasPrefix("否，")
+                || label.hasPrefix("否,")
+                || label.hasPrefix("拒绝")
+                || label.hasPrefix("不允许")
+        }
+    }
+
+    private static func normalizedDecisionLabel(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
     private func makeClientInfo(from thread: [String: Any], threadId: String) -> SessionClientInfo {
         let origin = sanitizedText(thread["origin"] as? String)
             ?? sanitizedText(thread["clientOrigin"] as? String)
@@ -1254,6 +2252,7 @@ actor CodexAppServerMonitor {
         let sessionFilePath = sanitizedText(thread["rolloutPath"] as? String)
             ?? sanitizedText(thread["sessionFilePath"] as? String)
             ?? sanitizedText(thread["rollout_path"] as? String)
+            ?? sanitizedText(thread["path"] as? String)
 
         let resolvedOrigin = origin ?? "desktop"
 
@@ -1394,6 +2393,23 @@ actor CodexAppServerMonitor {
             ])
         }
         return message
+    }
+
+    static func appServerRequestPayload(
+        id: String,
+        method: String,
+        params: [String: Any],
+        includeJSONRPCVersion: Bool
+    ) -> [String: Any] {
+        var payload: [String: Any] = [
+            "id": id,
+            "method": method,
+            "params": params
+        ]
+        if includeJSONRPCVersion {
+            payload["jsonrpc"] = "2.0"
+        }
+        return payload
     }
 
     private func stringify(_ value: Any) -> String {

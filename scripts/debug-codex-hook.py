@@ -4,12 +4,12 @@ Minimal Codex hook debugger.
 
 This script captures the raw stdin payload, argv, and a focused subset of
 environment variables so we can inspect what Codex hooks actually provide.
-When PingIslandBridge is available, it also forwards the hook payload so the
-normal Ping Island session flow keeps working during debugging.
+When Jade Cub Bridge is available, it also forwards the hook payload so the
+normal Jade Cub session flow keeps working during debugging.
 
 It is intentionally side-effect light:
 - writes newline-delimited JSON records to disk
-- forwards stdout/stderr from PingIslandBridge when forwarding is enabled
+- forwards stdout/stderr from Jade Cub Bridge when forwarding is enabled
 - exits 0 unless logging or bridge forwarding crashes
 """
 

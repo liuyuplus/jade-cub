@@ -26,7 +26,7 @@ struct ProcessInfo: Sendable {
 /// Builds and queries the system process tree
 struct ProcessTreeBuilder: Sendable {
     nonisolated static let shared = ProcessTreeBuilder()
-    nonisolated static let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "ProcessTree")
+    nonisolated static let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "ProcessTree")
 
     struct SSHCarrierMatch: Equatable, Sendable {
         let sshPid: Int

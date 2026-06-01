@@ -1312,3 +1312,20 @@ struct BellIndicatorIcon: View {
             .frame(width: size, height: size)
     }
 }
+
+struct ShieldAlertIndicatorIcon: View {
+    let size: CGFloat
+    let color: Color
+
+    init(size: CGFloat = 14, color: Color = TerminalColors.amber) {
+        self.size = size
+        self.color = color
+    }
+
+    var body: some View {
+        Image(systemName: "exclamationmark.shield.fill")
+            .font(.system(size: size - 1, weight: .semibold))
+            .foregroundStyle(color)
+            .frame(width: size, height: size)
+    }
+}

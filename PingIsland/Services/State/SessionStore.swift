@@ -45,7 +45,7 @@ actor SessionStore {
     }
 
     /// Logger for session store (nonisolated static for cross-context access)
-    nonisolated static let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "Session")
+    nonisolated static let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "Session")
 
     // MARK: - State
 
@@ -57,6 +57,8 @@ actor SessionStore {
     private var pendingCodexPlaceholderPrunes: [String: Task<Void, Never>] = [:]
     private var pendingQoderConversationPolls: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     private var pendingOpenClawConversationPolls: [String: (id: UUID, task: Task<Void, Never>)] = [:]
+    private var pendingCodexRolloutPolls: [String: (id: UUID, task: Task<Void, Never>)] = [:]
+    private var pendingCodexRolloutSyncs: [String: Task<Void, Never>] = [:]
     private var codexSessionAliases: [String: String] = [:]
 
     /// Sync debounce interval (100ms)
@@ -70,6 +72,9 @@ actor SessionStore {
     private let qoderSubagentAssociationWindow: TimeInterval = 2 * 60
     private let openClawConversationPollIntervalNs: UInt64 = 1_000_000_000
     private let openClawConversationPollTimeoutNs: UInt64 = 30_000_000_000
+    private let codexRolloutPollIntervalNs: UInt64 = 1_000_000_000
+    private let codexRolloutPollTimeoutNs: UInt64 = 30 * 60 * 1_000_000_000
+    private let codexRolloutObservationFreshness: TimeInterval = 30 * 60
 
     /// Persisted session associations used to restore client routing across relaunches.
     private var persistedAssociations: [String: PersistedSessionAssociation] = [:]
@@ -111,8 +116,11 @@ actor SessionStore {
         case .runtimeSessionStarted(let handle):
             processNativeRuntimeSessionStarted(handle)
 
-        case .runtimeSessionStopped(let sessionId, _):
-            await processSessionEnd(sessionId: sessionId)
+        case .runtimeSessionStopped(let sessionId, let reason):
+            await processSessionEnd(
+                sessionId: sessionId,
+                failure: Self.sessionFailure(forRuntimeStopReason: reason)
+            )
 
         case .permissionApproved(let sessionId, let toolUseId):
             await processPermissionApproved(sessionId: sessionId, toolUseId: toolUseId)
@@ -241,6 +249,7 @@ actor SessionStore {
             chatItems: existing?.chatItems ?? [],
             toolTracker: existing?.toolTracker ?? ToolTracker(),
             completedErrorToolIDs: existing?.completedErrorToolIDs ?? [],
+            sessionFailureEventIDs: existing?.sessionFailureEventIDs ?? [],
             subagentState: existing?.subagentState ?? SubagentState(),
             conversationInfo: existing?.conversationInfo ?? ConversationInfo(
                 summary: nil,
@@ -913,7 +922,7 @@ actor SessionStore {
         guard parent.clientInfo.brand == .qoder else { return }
         guard let mirroredPhase = mirroredPhaseForLinkedQoderChild(parent.phase) else { return }
 
-        for sessionId in sessions.keys {
+        for sessionId in Array(sessions.keys) {
             guard var child = sessions[sessionId] else { continue }
             guard child.linkedParentSessionId == parent.sessionId else { continue }
 
@@ -1413,12 +1422,19 @@ actor SessionStore {
     ) -> Bool {
         guard session.phase.isActive else { return false }
         guard incomingPhase == .idle else { return false }
+        guard let previousLastActivity else { return false }
+        guard Date().timeIntervalSince(previousLastActivity) < apparentIdleProcessingGraceWindow else {
+            return false
+        }
 
         if sessionHasLiveExecutionEvidence(session) {
             return true
         }
 
-        guard let previousLastActivity else { return false }
+        if session.provider == .codex, session.ingress == .codexAppServer {
+            return false
+        }
+
         return referenceDate.timeIntervalSince(previousLastActivity) < apparentIdleProcessingGraceWindow
     }
 
@@ -1750,20 +1766,28 @@ actor SessionStore {
 
     // MARK: - Session End Processing
 
-    private func processSessionEnd(sessionId: String) async {
+    private func processSessionEnd(
+        sessionId: String,
+        failure: (eventID: String, reason: String)? = nil
+    ) async {
         let resolvedSessionId = resolveCodexSessionAlias(sessionId)
         guard var session = sessions[resolvedSessionId] else {
             cancelPendingSync(sessionId: resolvedSessionId)
             cancelPendingCodexPlaceholderPrune(sessionId: resolvedSessionId)
             cancelPendingQoderConversationPoll(sessionId: resolvedSessionId)
+            cancelPendingCodexRolloutPoll(sessionId: resolvedSessionId)
             return
         }
 
+        if let failure {
+            applySessionFailure(&session, eventID: failure.eventID, reason: failure.reason)
+        }
         markSessionEnded(&session)
         sessions[resolvedSessionId] = session
         syncLinkedQoderChildSessions(for: session)
         cancelPendingCodexPlaceholderPrune(sessionId: resolvedSessionId)
         cancelPendingQoderConversationPoll(sessionId: resolvedSessionId)
+        cancelPendingCodexRolloutPoll(sessionId: resolvedSessionId)
         scheduleFinalSessionSync(for: session)
     }
 
@@ -1780,11 +1804,13 @@ actor SessionStore {
         cancelPendingSync(sessionId: resolvedSessionId)
         cancelPendingCodexPlaceholderPrune(sessionId: resolvedSessionId)
         cancelPendingQoderConversationPoll(sessionId: resolvedSessionId)
+        cancelPendingCodexRolloutPoll(sessionId: resolvedSessionId)
         for childSessionId in linkedChildSessionIDs {
             clearCodexSessionAliases(for: childSessionId)
             cancelPendingSync(sessionId: childSessionId)
             cancelPendingCodexPlaceholderPrune(sessionId: childSessionId)
             cancelPendingQoderConversationPoll(sessionId: childSessionId)
+            cancelPendingCodexRolloutPoll(sessionId: childSessionId)
         }
     }
 
@@ -1793,6 +1819,61 @@ actor SessionStore {
         session.intervention = nil
         session.autoApprovePermissions = false
         session.lastActivity = Date()
+    }
+
+    @discardableResult
+    func markSessionFailure(sessionId: String, eventID: String, reason: String) -> Bool {
+        let resolvedSessionId = resolveCodexSessionAlias(sessionId)
+        guard var session = sessions[resolvedSessionId] else { return false }
+
+        applySessionFailure(&session, eventID: eventID, reason: reason)
+        sessions[resolvedSessionId] = session
+        publishState()
+        return true
+    }
+
+    @discardableResult
+    func markCodexFailureForActiveSessions(eventID: String, reason: String) -> Int {
+        var markedCount = 0
+
+        for sessionId in sessions.keys {
+            guard var session = sessions[sessionId],
+                  session.provider == .codex,
+                  session.phase.isActive || session.phase.needsAttention || session.intervention != nil else {
+                continue
+            }
+
+            applySessionFailure(&session, eventID: eventID, reason: reason)
+            sessions[sessionId] = session
+            markedCount += 1
+        }
+
+        if markedCount > 0 {
+            publishState()
+        }
+
+        return markedCount
+    }
+
+    private func applySessionFailure(_ session: inout SessionState, eventID: String, reason: String) {
+        session.sessionFailureEventIDs.insert(eventID)
+        if session.previewText?.isEmpty != false {
+            session.previewText = reason
+        }
+        session.lastActivity = Date()
+    }
+
+    private static func sessionFailure(
+        forRuntimeStopReason reason: SessionRuntimeStopReason
+    ) -> (eventID: String, reason: String)? {
+        switch reason {
+        case .crashed:
+            return ("runtime-crashed", "Codex runtime stopped unexpectedly.")
+        case .unavailable:
+            return ("runtime-unavailable", "Codex runtime became unavailable.")
+        case .finished, .cancelled:
+            return nil
+        }
     }
 
     private func scheduleFinalSessionSync(for session: SessionState) {
@@ -1886,6 +1967,7 @@ actor SessionStore {
 
         // Sort by timestamp
         session.chatItems.sort { $0.timestamp < $1.timestamp }
+        session.isChatHistoryCompact = false
 
         await applyQoderFallbackIntervention(to: &session)
         applyClaudeTranscriptQuestionFallback(to: &session)
@@ -2085,41 +2167,85 @@ actor SessionStore {
         clientInfo: SessionClientInfo,
         cwd: String
     ) {
-        cancelPendingSync(sessionId: sessionId)
+        pendingCodexRolloutSyncs[sessionId]?.cancel()
 
-        pendingSyncs[sessionId] = Task { [weak self, syncDebounceNs] in
+        pendingCodexRolloutSyncs[sessionId] = Task { [weak self, syncDebounceNs] in
             try? await Task.sleep(nanoseconds: syncDebounceNs)
             guard !Task.isCancelled else { return }
-
-            let appServerSnapshot: CodexThreadSnapshot?
-            do {
-                appServerSnapshot = try await CodexAppServerMonitor.shared.readThread(
-                    threadId: sessionId,
-                    includeTurns: true
-                )
-            } catch {
-                appServerSnapshot = nil
-                // Fall back to rollout parsing when the app-server is unavailable
-                // or the thread hasn't been materialized there yet.
-            }
 
             guard let snapshot = await CodexRolloutParser.shared.parseThread(
                 threadId: sessionId,
                 fallbackCwd: cwd,
-                clientInfo: clientInfo
+                clientInfo: clientInfo,
+                historyMode: .summary
             ) else {
                 return
             }
 
-            if let appServerSnapshot,
-               snapshot.intervention == nil,
-               snapshot.historyItems.count <= appServerSnapshot.historyItems.count,
-               snapshot.updatedAt <= appServerSnapshot.updatedAt {
-                return
-            }
-
+            await self?.clearPendingCodexRolloutSync(sessionId: sessionId)
             await self?.syncCodexThreadSnapshot(snapshot, ingress: .hookBridge)
         }
+    }
+
+    private func cancelPendingCodexRolloutSync(sessionId: String) {
+        pendingCodexRolloutSyncs[sessionId]?.cancel()
+        pendingCodexRolloutSyncs.removeValue(forKey: sessionId)
+    }
+
+    private func clearPendingCodexRolloutSync(sessionId: String) {
+        pendingCodexRolloutSyncs.removeValue(forKey: sessionId)
+    }
+
+    private func ensureCodexRolloutPoll(
+        sessionId: String,
+        clientInfo: SessionClientInfo,
+        cwd: String
+    ) {
+        guard clientInfo.sessionFilePath?.isEmpty == false else { return }
+        guard pendingCodexRolloutPolls[sessionId] == nil else { return }
+
+        let pollID = UUID()
+        let task = Task { [weak self] in
+            guard let self else { return }
+
+            let startedAt = Date()
+            while !Task.isCancelled {
+                guard let session = await self.session(for: sessionId),
+                      session.provider == .codex,
+                      session.phase != .ended,
+                      session.clientInfo.sessionFilePath?.isEmpty == false,
+                      await self.shouldObserveCodexRollout(session) else {
+                    break
+                }
+
+                await self.scheduleCodexRolloutSync(
+                    sessionId: sessionId,
+                    clientInfo: session.clientInfo,
+                    cwd: session.cwd
+                )
+
+                if Date().timeIntervalSince(startedAt) * 1_000_000_000 >= Double(self.codexRolloutPollTimeoutNs) {
+                    break
+                }
+
+                try? await Task.sleep(nanoseconds: self.codexRolloutPollIntervalNs)
+            }
+
+            await self.finishCodexRolloutPoll(sessionId: sessionId, pollID: pollID)
+        }
+
+        pendingCodexRolloutPolls[sessionId] = (id: pollID, task: task)
+    }
+
+    private func cancelPendingCodexRolloutPoll(sessionId: String) {
+        pendingCodexRolloutPolls[sessionId]?.task.cancel()
+        pendingCodexRolloutPolls.removeValue(forKey: sessionId)
+        cancelPendingCodexRolloutSync(sessionId: sessionId)
+    }
+
+    private func finishCodexRolloutPoll(sessionId: String, pollID: UUID) {
+        guard pendingCodexRolloutPolls[sessionId]?.id == pollID else { return }
+        pendingCodexRolloutPolls.removeValue(forKey: sessionId)
     }
 
     // MARK: - State Publishing
@@ -2165,6 +2291,13 @@ actor SessionStore {
     func containsSession(_ sessionId: String) -> Bool {
         let resolvedSessionId = resolveCodexSessionAlias(sessionId)
         return sessions.keys.contains(resolvedSessionId)
+    }
+
+    func hasActiveCodexAppServerPollingSession() -> Bool {
+        sessions.values.contains { session in
+            guard session.provider == .codex else { return false }
+            return session.phase.isActive || session.phase.needsAttention || session.intervention != nil
+        }
     }
 
     /// Check if there's an active permission for a session
@@ -2307,37 +2440,51 @@ actor SessionStore {
         if let preview, !preview.isEmpty {
             session.previewText = preview
         }
+        var incomingPhase = phase
+        var incomingIntervention = intervention
+        if isCodexTurnAbortText(preview) {
+            incomingPhase = .idle
+            incomingIntervention = nil
+            markRunningToolsInterrupted(in: &session)
+        }
         let shouldPreserveExternalIntervention = shouldPreserveExternalCodexIntervention(
             current: session.intervention,
-            incoming: intervention,
-            nextPhase: phase,
+            incoming: incomingIntervention,
+            nextPhase: incomingPhase,
             clientKind: session.clientInfo.kind
         )
         if !shouldPreserveExternalIntervention {
-            session.intervention = intervention
+            session.intervention = incomingIntervention
         }
         if shouldPreserveExternalIntervention {
             if !session.phase.needsAttention {
-                session.phase = phase
+                session.phase = incomingPhase
             }
+        } else if isCodexTurnAbortText(preview) {
+            session.phase = .idle
         } else if shouldPreserveActivePhaseDuringApparentIdle(
             session: session,
-            incomingPhase: phase,
+            incomingPhase: incomingPhase,
             referenceDate: activityAt ?? Date(),
             previousLastActivity: existingLastActivity
         ) {
             // Keep the fresher active state until a stronger non-idle signal arrives.
         } else if shouldPreserveActivePhaseFromStaleCodexRefresh(
             currentPhase: session.phase,
-            incomingPhase: phase,
+            incomingPhase: incomingPhase,
             currentLastActivity: existingLastActivity,
             incomingActivityAt: activityAt ?? Date()
         ) {
             // Keep the fresher active state until Codex catches up with a newer snapshot.
-        } else if session.phase.canTransition(to: phase) || session.phase == phase {
-            session.phase = phase
+        } else if shouldPreserveCodexRolloutReadyDuringAppServerIdle(
+            session: session,
+            incomingPhase: incomingPhase
+        ) {
+            // Keep the rollout-derived completion state until a newer turn starts.
+        } else if session.phase.canTransition(to: incomingPhase) || session.phase == incomingPhase {
+            session.phase = incomingPhase
         } else {
-            session.phase = phase
+            session.phase = incomingPhase
         }
         let hasIntervention: Bool
         if case .some = session.intervention {
@@ -2364,6 +2511,9 @@ actor SessionStore {
             )
         }
 
+        if incomingPhase.isActive {
+            session.sessionFailureEventIDs.removeAll()
+        }
         if !metadata.isEmpty {
             var previewMetadata = session.previewText ?? ""
             if previewMetadata.isEmpty, let reason = metadata["reason"] {
@@ -2371,6 +2521,13 @@ actor SessionStore {
             }
             if !previewMetadata.isEmpty {
                 session.previewText = previewMetadata
+            }
+            if let failureEventID = metadata["failureEventID"] {
+                applySessionFailure(
+                    &session,
+                    eventID: failureEventID,
+                    reason: metadata["failureReason"] ?? metadata["reason"] ?? "Codex reported a failure."
+                )
             }
         }
 
@@ -2387,6 +2544,7 @@ actor SessionStore {
         sessions[resolvedSessionId] = session
         publishState()
         updateCodexPlaceholderPrune(for: session)
+        ensureCodexRolloutObservation(for: session)
     }
 
     func updateCodexThreadName(sessionId: String, name: String?) {
@@ -2457,43 +2615,66 @@ actor SessionStore {
         } else if let preview = snapshot.preview, !preview.isEmpty {
             session.previewText = preview
         }
-        session.chatItems = snapshot.historyItems
+        session.chatItems = snapshot.isHistoryCompact
+            ? snapshot.historyItems
+            : ChatHistoryRetentionPolicy.compactForResidentStorage(snapshot.historyItems)
+        session.isChatHistoryCompact = true
         session.conversationInfo = snapshot.conversationInfo
         session.codexParentThreadId = snapshot.parentThreadId
         session.codexSubagentDepth = snapshot.subagentDepth
         session.codexSubagentNickname = snapshot.subagentNickname
         session.codexSubagentRole = snapshot.subagentRole
+        let snapshotIndicatesTurnAbort = codexSnapshotIndicatesTurnAbort(snapshot)
+        let incomingSnapshotPhase: SessionPhase = snapshotIndicatesTurnAbort ? .idle : snapshot.phase
+        let incomingSnapshotIntervention = snapshotIndicatesTurnAbort ? nil : snapshot.intervention
+        if snapshotIndicatesTurnAbort {
+            markRunningToolsInterrupted(in: &session)
+        }
         let shouldPreserveExternalIntervention = shouldPreserveExternalCodexIntervention(
             current: session.intervention,
-            incoming: snapshot.intervention,
-            nextPhase: snapshot.phase,
+            incoming: incomingSnapshotIntervention,
+            nextPhase: incomingSnapshotPhase,
             clientKind: session.clientInfo.kind
         )
         if !shouldPreserveExternalIntervention {
-            session.intervention = snapshot.intervention
+            session.intervention = incomingSnapshotIntervention
         }
         if shouldPreserveExternalIntervention {
             if !session.phase.needsAttention {
-                session.phase = snapshot.phase
+                session.phase = incomingSnapshotPhase
             }
+        } else if snapshotIndicatesTurnAbort {
+            session.phase = .idle
+        } else if shouldPreserveCodexAppServerApproval(
+            session: session,
+            incomingPhase: incomingSnapshotPhase,
+            ingress: ingress
+        ) {
+            // Codex Desktop's app-server approval state is authoritative until app-server clears it.
         } else if shouldPreserveActivePhaseDuringApparentIdle(
             session: session,
-            incomingPhase: snapshot.phase,
+            incomingPhase: incomingSnapshotPhase,
             referenceDate: snapshot.updatedAt,
             previousLastActivity: existingLastActivity
         ) {
             // Keep the fresher active state until a stronger non-idle signal arrives.
         } else if shouldPreserveActivePhaseFromStaleCodexRefresh(
             currentPhase: session.phase,
-            incomingPhase: snapshot.phase,
+            incomingPhase: incomingSnapshotPhase,
             currentLastActivity: existingLastActivity,
             incomingActivityAt: snapshot.updatedAt
         ) {
             // Keep the fresher active state until Codex catches up with a newer snapshot.
+        } else if ingress == .codexAppServer,
+                  shouldPreserveCodexRolloutReadyDuringAppServerIdle(
+                      session: session,
+                      incomingPhase: incomingSnapshotPhase
+                  ) {
+            // Keep the rollout-derived completion state until a newer turn starts.
         } else if case .none = session.intervention {
-            session.phase = snapshot.phase
-        } else if snapshot.phase.needsAttention {
-            session.phase = snapshot.phase
+            session.phase = incomingSnapshotPhase
+        } else if incomingSnapshotPhase.needsAttention {
+            session.phase = incomingSnapshotPhase
         }
         let hasIntervention: Bool
         if case .some = session.intervention {
@@ -2523,15 +2704,70 @@ actor SessionStore {
                 incoming: snapshot.updatedAt
             )
         }
+        if incomingSnapshotPhase.isActive {
+            session.sessionFailureEventIDs.removeAll()
+        }
 
         let placeholderCandidate = isLikelyEmptyCodexPlaceholder(session)
         Self.logger.debug(
-            "Codex snapshot sync session=\(resolvedSessionId, privacy: .public) sourceThread=\(snapshot.threadId, privacy: .public) ingress=\(ingress.rawValue, privacy: .public) historyItems=\(snapshot.historyItems.count, privacy: .public) namePresent=\(snapshot.name?.isEmpty == false, privacy: .public) previewPresent=\(snapshot.preview?.isEmpty == false, privacy: .public) filePathPresent=\(session.clientInfo.sessionFilePath?.isEmpty == false, privacy: .public) placeholderCandidate=\(placeholderCandidate, privacy: .public)"
+            "Codex snapshot sync session=\(resolvedSessionId, privacy: .public) sourceThread=\(snapshot.threadId, privacy: .public) ingress=\(ingress.rawValue, privacy: .public) snapshotPhase=\(snapshot.phase.description, privacy: .public) finalPhase=\(session.phase.description, privacy: .public) historyItems=\(snapshot.historyItems.count, privacy: .public) namePresent=\(snapshot.name?.isEmpty == false, privacy: .public) previewPresent=\(snapshot.preview?.isEmpty == false, privacy: .public) filePathPresent=\(session.clientInfo.sessionFilePath?.isEmpty == false, privacy: .public) placeholderCandidate=\(placeholderCandidate, privacy: .public)"
         )
 
         sessions[resolvedSessionId] = session
         publishState()
         updateCodexPlaceholderPrune(for: session)
+        if ingress != .hookBridge {
+            ensureCodexRolloutObservation(for: session)
+        }
+    }
+
+    private func ensureCodexRolloutObservation(for session: SessionState) {
+        guard shouldObserveCodexRollout(session) else {
+            return
+        }
+
+        ensureCodexRolloutPoll(
+            sessionId: session.sessionId,
+            clientInfo: session.clientInfo,
+            cwd: session.cwd
+        )
+        scheduleCodexRolloutSync(
+            sessionId: session.sessionId,
+            clientInfo: session.clientInfo,
+            cwd: session.cwd
+        )
+
+        Task { @MainActor in
+            InterruptWatcherManager.shared.startWatching(
+                sessionId: session.sessionId,
+                cwd: session.cwd,
+                explicitFilePath: session.clientInfo.sessionFilePath
+            )
+        }
+    }
+
+    private func shouldObserveCodexRollout(_ session: SessionState) -> Bool {
+        guard session.provider == .codex,
+              let sessionFilePath = session.clientInfo.sessionFilePath,
+              !sessionFilePath.isEmpty else {
+            return false
+        }
+
+        if session.phase.isActive || session.phase.needsAttention {
+            return true
+        }
+
+        let now = Date()
+        if now.timeIntervalSince(session.lastActivity) <= codexRolloutObservationFreshness {
+            return true
+        }
+
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: sessionFilePath),
+              let modificationDate = attributes[.modificationDate] as? Date else {
+            return false
+        }
+
+        return now.timeIntervalSince(modificationDate) <= codexRolloutObservationFreshness
     }
 
     private func shouldPreserveExternalCodexIntervention(
@@ -2560,6 +2796,15 @@ actor SessionStore {
         if source == "codex_hook_permission" {
             return !nextPhase.needsAttention
         }
+        if source == "codex_app_server_request_approval" {
+            return !nextPhase.needsAttention
+        }
+        if source == "codex_app_server_status_waiting_approval" {
+            return !nextPhase.needsAttention
+        }
+        if source == "codex_app_pending_mcp" {
+            return !nextPhase.needsAttention
+        }
 
         guard clientKind == .codexCLI,
               current.metadata["responseMode"] == "external_only",
@@ -2582,6 +2827,62 @@ actor SessionStore {
         return true
     }
 
+    private func codexSnapshotIndicatesTurnAbort(_ snapshot: CodexThreadSnapshot) -> Bool {
+        if isCodexTurnAbortText(snapshot.latestUserText)
+            || isCodexTurnAbortText(snapshot.preview)
+            || isCodexTurnAbortText(snapshot.conversationInfo.lastMessage) {
+            return true
+        }
+
+        return snapshot.historyItems.contains { item in
+            switch item.type {
+            case .user(let text), .assistant(let text), .thinking(let text):
+                return isCodexTurnAbortText(text)
+            case .toolCall, .interrupted:
+                return false
+            }
+        }
+    }
+
+    private func isCodexTurnAbortText(_ text: String?) -> Bool {
+        guard let text else { return false }
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.contains("<turn_aborted>")
+            || normalized.contains("turn_aborted")
+            || normalized.contains("the user interrupt")
+            || normalized.contains("user interrupted")
+    }
+
+    private func markRunningToolsInterrupted(in session: inout SessionState) {
+        for index in session.chatItems.indices {
+            guard case .toolCall(var tool) = session.chatItems[index].type,
+                  tool.status == .running || tool.status == .waitingForApproval else {
+                continue
+            }
+            tool.status = .interrupted
+            session.chatItems[index] = ChatHistoryItem(
+                id: session.chatItems[index].id,
+                type: .toolCall(tool),
+                timestamp: session.chatItems[index].timestamp
+            )
+        }
+    }
+
+    private func shouldPreserveCodexAppServerApproval(
+        session: SessionState,
+        incomingPhase: SessionPhase,
+        ingress: SessionIngress
+    ) -> Bool {
+        guard ingress != .codexAppServer,
+              session.provider == .codex,
+              session.ingress == .codexAppServer,
+              session.phase.isWaitingForApproval,
+              !incomingPhase.needsAttention else {
+            return false
+        }
+        return Date().timeIntervalSince(session.lastActivity) < 10 * 60
+    }
+
     private func shouldPreserveActivePhaseFromStaleCodexRefresh(
         currentPhase: SessionPhase,
         incomingPhase: SessionPhase,
@@ -2592,6 +2893,33 @@ actor SessionStore {
         guard incomingPhase == .idle else { return false }
         guard let currentLastActivity else { return false }
         return incomingActivityAt < currentLastActivity
+    }
+
+    private func shouldPreserveCodexRolloutReadyDuringAppServerIdle(
+        session: SessionState,
+        incomingPhase: SessionPhase
+    ) -> Bool {
+        guard session.provider == .codex,
+              session.clientInfo.sessionFilePath?.isEmpty == false,
+              session.phase == .waitingForInput,
+              incomingPhase == .idle,
+              session.intervention == nil else {
+            return false
+        }
+        guard Date().timeIntervalSince(session.lastActivity) < 90 else {
+            return false
+        }
+
+        for item in session.chatItems.reversed() {
+            switch item.type {
+            case .assistant:
+                return true
+            case .user, .thinking, .toolCall, .interrupted:
+                return false
+            }
+        }
+
+        return session.lastMessageRole == "assistant"
     }
 
     func resolveCodexIntervention(sessionId: String, nextPhase: SessionPhase = .processing) {
@@ -3156,6 +3484,7 @@ actor SessionStore {
         cancelPendingSync(sessionId: previousSessionId)
         cancelPendingCodexPlaceholderPrune(sessionId: previousSessionId)
         cancelPendingQoderConversationPoll(sessionId: previousSessionId)
+        cancelPendingCodexRolloutPoll(sessionId: previousSessionId)
 
         let migratedSession = SessionState(
             sessionId: currentSessionId,
@@ -3182,6 +3511,7 @@ actor SessionStore {
             chatItems: previousSession.chatItems,
             toolTracker: previousSession.toolTracker,
             completedErrorToolIDs: previousSession.completedErrorToolIDs,
+            sessionFailureEventIDs: previousSession.sessionFailureEventIDs,
             subagentState: previousSession.subagentState,
             conversationInfo: previousSession.conversationInfo,
             needsClearReconciliation: previousSession.needsClearReconciliation,
@@ -3430,6 +3760,7 @@ actor SessionStore {
         sessions.removeValue(forKey: sessionId)
         clearCodexSessionAliases(for: sessionId)
         cancelPendingSync(sessionId: sessionId)
+        cancelPendingCodexRolloutPoll(sessionId: sessionId)
         publishState()
     }
 
@@ -3448,6 +3779,7 @@ actor SessionStore {
             sessions.removeValue(forKey: sessionId)
             clearCodexSessionAliases(for: sessionId)
             cancelPendingSync(sessionId: sessionId)
+            cancelPendingCodexRolloutPoll(sessionId: sessionId)
             cancelPendingCodexPlaceholderPrune(sessionId: sessionId)
         }
         return expiredSessionIDs

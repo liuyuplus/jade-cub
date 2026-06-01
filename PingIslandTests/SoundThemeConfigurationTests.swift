@@ -13,6 +13,7 @@ final class SoundThemeConfigurationTests: XCTestCase {
 
     func testIsland8BitEventMappingsMatchSelectedPreset() {
         XCTAssertEqual(NotificationEvent.processingStarted.island8BitSound, .processingStarted)
+        XCTAssertEqual(NotificationEvent.approvalRequired.island8BitSound, .approvalRequired)
         XCTAssertEqual(NotificationEvent.attentionRequired.island8BitSound, .attentionRequired)
         XCTAssertEqual(NotificationEvent.taskCompleted.island8BitSound, .taskCompleted)
         XCTAssertEqual(NotificationEvent.taskError.island8BitSound, .taskError)
@@ -23,6 +24,8 @@ final class SoundThemeConfigurationTests: XCTestCase {
         XCTAssertEqual(Island8BitSound.clientStartup.rawValue, "island8bit_client_startup")
         XCTAssertEqual(Island8BitSound.clientStartup.label, "Power Up")
         XCTAssertEqual(Island8BitSound.processingStarted.label, "Menu Select")
+        XCTAssertEqual(Island8BitSound.approvalRequired.rawValue, "8bit_approval")
+        XCTAssertEqual(Island8BitSound.approvalRequired.label, "Approval Alert")
         XCTAssertEqual(Island8BitSound.attentionRequired.label, "Item Pickup")
         XCTAssertEqual(Island8BitSound.taskCompleted.label, "Menu Highlight")
         XCTAssertEqual(Island8BitSound.taskError.label, "Hurt")

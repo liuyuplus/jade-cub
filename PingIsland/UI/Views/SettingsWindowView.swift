@@ -180,6 +180,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
     case shortcuts
     case display
+    case obsidian
     case mascot
     case sound
     case integration
@@ -188,11 +189,22 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    static let standardCategories: [SettingsCategory] = [
+        .general,
+        .display,
+        .obsidian,
+        .shortcuts,
+        .mascot,
+        .sound,
+        .about
+    ]
+
     var title: String {
         switch self {
         case .general: return "通用"
         case .shortcuts: return "快捷键"
         case .display: return "显示"
+        case .obsidian: return "Obsidian"
         case .mascot: return "宠物"
         case .sound: return "声音"
         case .integration: return "集成"
@@ -203,14 +215,15 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .general: return "系统与基础行为"
-        case .shortcuts: return "全局展开与自定义"
-        case .display: return "显示器与位置"
-        case .mascot: return "客户端宠物与动作"
-        case .sound: return "通知与提示音"
+        case .general: return "Launch and behavior"
+        case .shortcuts: return "Keyboard access"
+        case .display: return "Island and panels"
+        case .obsidian: return "Daily tasks"
+        case .mascot: return "Jade Cub avatar"
+        case .sound: return "Notifications"
         case .integration: return "Hooks 与 IDE 扩展"
         case .remote: return "SSH 主机与远程转发"
-        case .about: return "版本与更新"
+        case .about: return "Version and updates"
         }
     }
 
@@ -219,6 +232,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .general: return "gearshape.fill"
         case .shortcuts: return "command.square.fill"
         case .display: return "rectangle.on.rectangle"
+        case .obsidian: return "checklist"
         case .mascot: return "face.smiling.fill"
         case .sound: return "speaker.wave.2.fill"
         case .integration: return "link.circle.fill"
@@ -229,14 +243,15 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var tint: Color {
         switch self {
-        case .general: return Color(red: 0.12, green: 0.42, blue: 0.95)
-        case .shortcuts: return Color(red: 0.25, green: 0.82, blue: 0.46)
-        case .display: return Color(red: 0.46, green: 0.40, blue: 0.96)
-        case .mascot: return Color(red: 0.91, green: 0.27, blue: 0.81)  // Pink
-        case .sound: return Color(red: 0.22, green: 0.83, blue: 0.42)
+        case .general: return Color(red: 0.08, green: 0.10, blue: 0.09)
+        case .shortcuts: return Color(red: 0.08, green: 0.10, blue: 0.09)
+        case .display: return Color(red: 0.08, green: 0.10, blue: 0.09)
+        case .obsidian: return Color(red: 0.08, green: 0.10, blue: 0.09)
+        case .mascot: return Color(red: 0.08, green: 0.10, blue: 0.09)
+        case .sound: return Color(red: 0.08, green: 0.10, blue: 0.09)
         case .integration: return Color(red: 0.16, green: 0.76, blue: 0.72)
         case .remote: return Color(red: 0.95, green: 0.54, blue: 0.20)
-        case .about: return Color(red: 0.17, green: 0.60, blue: 0.96)
+        case .about: return Color(red: 0.08, green: 0.10, blue: 0.09)
         }
     }
 }
@@ -594,7 +609,7 @@ final class SettingsPanelViewModel: ObservableObject {
         panel.allowedContentTypes = [.zip]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
-        panel.nameFieldStringValue = "PingIsland-Diagnostics-\(Self.archiveTimestamp()).zip"
+        panel.nameFieldStringValue = "JadeCub-Diagnostics-\(Self.archiveTimestamp()).zip"
 
         guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
 
@@ -680,23 +695,57 @@ private struct SettingsSidebarSection: Identifiable {
     var id: String { title ?? categories.map(\.rawValue).joined(separator: "-") }
 }
 
-private struct SettingsGlassSurface: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-    var blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
-    var state: NSVisualEffectView.State = .active
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = blendingMode
-        view.state = state
-        return view
+private enum SettingsTheme {
+    static func primaryText(_ colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color.white.opacity(0.94) : Color.black.opacity(0.88)
     }
 
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
-        nsView.state = state
+    static func secondaryText(_ colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color.white.opacity(0.62) : Color.black.opacity(0.58)
+    }
+
+    static func tertiaryText(_ colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color.white.opacity(0.42) : Color.black.opacity(0.42)
+    }
+
+    static func subtleStroke(_ colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.10)
+    }
+
+    static func subtleFill(_ colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.025)
+    }
+}
+
+private enum SettingsTextRole {
+    case primary
+    case secondary
+    case tertiary
+}
+
+private struct SettingsAdaptiveTextColor: ViewModifier {
+    let role: SettingsTextRole
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content.foregroundColor(color)
+    }
+
+    private var color: Color {
+        switch role {
+        case .primary:
+            return SettingsTheme.primaryText(colorScheme)
+        case .secondary:
+            return SettingsTheme.secondaryText(colorScheme)
+        case .tertiary:
+            return SettingsTheme.tertiaryText(colorScheme)
+        }
+    }
+}
+
+private extension View {
+    func settingsTextColor(_ role: SettingsTextRole) -> some View {
+        modifier(SettingsAdaptiveTextColor(role: role))
     }
 }
 
@@ -705,8 +754,8 @@ private enum SettingsPanelMetrics {
     static let windowMinSize = AppSettings.minimumSettingsWindowSize
     static let windowMaxSize = AppSettings.maximumSettingsWindowSize
     static let popoverSize = CGSize(width: 760, height: 620)
-    static let windowSidebarWidth: CGFloat = 236
-    static let popoverSidebarWidth: CGFloat = 212
+    static let windowSidebarWidth: CGFloat = 220
+    static let popoverSidebarWidth: CGFloat = 200
     static let windowContentTopInset: CGFloat = 0
     static let popoverContentTopInset: CGFloat = 0
     static let outerPadding: CGFloat = 0
@@ -716,6 +765,7 @@ private struct SettingsPanelContentView: View {
     let presentation: SettingsPanelPresentation
     var onClose: (() -> Void)? = nil
     var onMinimize: (() -> Void)? = nil
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("settings.nativeRuntimePreviewUnlocked") private var nativeRuntimePreviewUnlocked = false
 
     @StateObject private var viewModel = SettingsPanelViewModel()
@@ -724,6 +774,7 @@ private struct SettingsPanelContentView: View {
     @ObservedObject private var soundPacks = SoundPackCatalog.shared
     @ObservedObject private var updateManager = UpdateManager.shared
     @ObservedObject private var remoteManager = RemoteConnectorManager.shared
+    @ObservedObject private var obsidianTaskStore = ObsidianDailyTaskStore.shared
     @State private var selectedCategory: SettingsCategory? = .general
     @State private var nativeRuntimePreviewUnlockState = NativeRuntimePreviewUnlockState()
     @State private var pendingHookReinstallProfile: ManagedHookClientProfile?
@@ -734,6 +785,8 @@ private struct SettingsPanelContentView: View {
 
     var body: some View {
         ZStack {
+            panelBackground
+
             HStack(spacing: 0) {
                 sidebar
                     .frame(width: sidebarWidth)
@@ -755,11 +808,11 @@ private struct SettingsPanelContentView: View {
                 alignment: .topLeading
             )
         }
-        .background(panelBackgroundColor)
+        .background(Color.clear)
         .ignoresSafeArea()
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: Color.black.opacity(0.22), radius: 30, y: 18)
-        .preferredColorScheme(.dark)
+        .clipShape(RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous))
+        .overlay { outerBorder }
+        .shadow(color: outerShadowColor, radius: colorScheme == .dark ? 30 : 0, y: colorScheme == .dark ? 18 : 0)
         .onAppear {
             viewModel.refresh()
             ensureValidSelectedSoundPack()
@@ -898,7 +951,57 @@ private struct SettingsPanelContentView: View {
     }
 
     private var panelBackgroundColor: Color {
-        .clear
+        colorScheme == .dark ? Color(red: 0.07, green: 0.075, blue: 0.07) : Color(red: 0.985, green: 0.985, blue: 0.975)
+    }
+
+    @ViewBuilder
+    private var panelBackground: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(panelBackgroundColor)
+            .ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private var outerBorder: some View {
+        if colorScheme == .dark {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+        } else {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private var outerCornerRadius: CGFloat {
+        18
+    }
+
+    private var outerShadowColor: Color {
+        colorScheme == .dark ? Color.black.opacity(0.22) : .clear
+    }
+
+    private var primaryTextColor: Color {
+        colorScheme == .dark ? .white : Color.black.opacity(0.82)
+    }
+
+    private var secondaryTextColor: Color {
+        colorScheme == .dark ? .white.opacity(0.58) : Color.black.opacity(0.54)
+    }
+
+    private var subtleTextColor: Color {
+        colorScheme == .dark ? .white.opacity(0.32) : Color.black.opacity(0.38)
+    }
+
+    private var surfaceFillColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.02) : Color.white.opacity(0.0)
+    }
+
+    private var sidebarFillColor: Color {
+        colorScheme == .dark ? Color.black.opacity(0.18) : Color.white
+    }
+
+    private var borderColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.08)
     }
 
     private var contentTopInset: CGFloat {
@@ -914,7 +1017,7 @@ private struct SettingsPanelContentView: View {
         [
             SettingsSidebarSection(
                 title: nil,
-                categories: [.general, .shortcuts, .display, .mascot, .sound, .integration, .remote, .about]
+                categories: SettingsCategory.standardCategories
             )
         ]
     }
@@ -926,12 +1029,14 @@ private struct SettingsPanelContentView: View {
                     sidebarWindowControls
                 }
 
+                sidebarBrandHeader
+
                 ForEach(sidebarSections) { section in
                     VStack(alignment: .leading, spacing: 8) {
                         if let title = section.title {
                             Text(appLocalized: title)
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.white.opacity(0.32))
+                                .foregroundColor(subtleTextColor)
                                 .padding(.horizontal, 12)
                         }
 
@@ -961,72 +1066,44 @@ private struct SettingsPanelContentView: View {
             .padding(.vertical, 14)
         }
         .padding(8)
-        .background(
-            UnevenRoundedRectangle(
-                topLeadingRadius: 24,
-                bottomLeadingRadius: 24,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 0,
-                style: .continuous
-            )
-                .fill(Color.white.opacity(0.055))
-                .overlay {
-                    SettingsGlassSurface(material: .sidebar, blendingMode: .withinWindow)
-                        .clipShape(
-                            UnevenRoundedRectangle(
-                                topLeadingRadius: 24,
-                                bottomLeadingRadius: 24,
-                                bottomTrailingRadius: 0,
-                                topTrailingRadius: 0,
-                                style: .continuous
-                            )
-                        )
-                        .opacity(0.94)
-                }
-                .overlay {
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.12),
-                            Color.white.opacity(0.04),
-                            Color.black.opacity(0.10)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .clipShape(
-                        UnevenRoundedRectangle(
-                            topLeadingRadius: 24,
-                            bottomLeadingRadius: 24,
-                            bottomTrailingRadius: 0,
-                            topTrailingRadius: 0,
-                            style: .continuous
-                        )
-                    )
-                }
-                .overlay(alignment: .topTrailing) {
-                    Circle()
-                        .fill(Color.white.opacity(0.16))
-                        .frame(width: 120, height: 120)
-                        .blur(radius: 36)
-                        .offset(x: 28, y: -26)
-                }
-        )
-        .overlay(
-            UnevenRoundedRectangle(
-                topLeadingRadius: 24,
-                bottomLeadingRadius: 24,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 0,
-                style: .continuous
-            )
-                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.20), radius: 24, y: 14)
+        .background {
+            sidebarBackground
+        }
+        .overlay {
+            sidebarBorder
+        }
+        .shadow(color: .clear, radius: 0, y: 0)
+    }
+
+    private var sidebarBrandHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Jade Cub")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(primaryTextColor)
+            Text("Codex-first status island")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(secondaryTextColor)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 2)
+        .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private var sidebarBackground: some View {
+        Rectangle()
+            .fill(sidebarFillColor)
+    }
+
+    @ViewBuilder
+    private var sidebarBorder: some View {
+        Rectangle()
+            .strokeBorder(borderColor, lineWidth: 1)
     }
 
     private var sidebarWindowControls: some View {
         HStack(spacing: 10) {
-            WindowControlButton(color: Color(red: 1.0, green: 0.37, blue: 0.36)) {
+            WindowControlButton(kind: .close, color: Color(red: 1.0, green: 0.37, blue: 0.36)) {
                 if let onClose {
                     onClose()
                 } else {
@@ -1034,7 +1111,7 @@ private struct SettingsPanelContentView: View {
                 }
             }
 
-            WindowControlButton(color: Color(red: 1.0, green: 0.74, blue: 0.18)) {
+            WindowControlButton(kind: .minimize, color: Color(red: 1.0, green: 0.74, blue: 0.18)) {
                 if let onMinimize {
                     onMinimize()
                 } else {
@@ -1059,6 +1136,8 @@ private struct SettingsPanelContentView: View {
                     shortcutsContent
                 case .display:
                     displayContent
+                case .obsidian:
+                    obsidianContent
                 case .mascot:
                     mascotContent
                 case .sound:
@@ -1078,60 +1157,45 @@ private struct SettingsPanelContentView: View {
         }
         .id(currentCategory)
         .accessibilityIdentifier("settings.detail.\(currentCategory.rawValue)")
-        .background(
+        .background {
+            detailBackground
+        }
+        .overlay {
+            detailBorder
+        }
+        .shadow(color: colorScheme == .dark ? Color.black.opacity(0.16) : .clear, radius: 24, y: 14)
+    }
+
+    @ViewBuilder
+    private var detailBackground: some View {
+        if colorScheme == .dark {
             UnevenRoundedRectangle(
                 topLeadingRadius: 0,
                 bottomLeadingRadius: 0,
                 bottomTrailingRadius: 26,
-                topTrailingRadius: 26,
+                topTrailingRadius: 18,
                 style: .continuous
             )
-                .fill(Color.white.opacity(0.035))
-                .overlay {
-                    SettingsGlassSurface(material: .hudWindow, blendingMode: .withinWindow)
-                        .clipShape(
-                            UnevenRoundedRectangle(
-                                topLeadingRadius: 0,
-                                bottomLeadingRadius: 0,
-                                bottomTrailingRadius: 26,
-                                topTrailingRadius: 26,
-                                style: .continuous
-                            )
-                        )
-                        .opacity(0.96)
-                }
-                .overlay {
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.11),
-                            Color.white.opacity(0.03),
-                            Color.black.opacity(0.05)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .clipShape(
-                        UnevenRoundedRectangle(
-                            topLeadingRadius: 0,
-                            bottomLeadingRadius: 0,
-                            bottomTrailingRadius: 26,
-                            topTrailingRadius: 26,
-                            style: .continuous
-                        )
-                    )
-                }
-        )
-        .overlay(
+                .fill(surfaceFillColor)
+        } else {
+            Color.clear
+        }
+    }
+
+    @ViewBuilder
+    private var detailBorder: some View {
+        if colorScheme == .dark {
             UnevenRoundedRectangle(
                 topLeadingRadius: 0,
                 bottomLeadingRadius: 0,
-                bottomTrailingRadius: 26,
-                topTrailingRadius: 26,
+                bottomTrailingRadius: 18,
+                topTrailingRadius: 18,
                 style: .continuous
             )
-                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.16), radius: 24, y: 14)
+                .strokeBorder(borderColor, lineWidth: 1)
+        } else {
+            Color.clear
+        }
     }
 
     private var currentCategory: SettingsCategory {
@@ -1220,7 +1284,7 @@ private struct SettingsPanelContentView: View {
                 } accessory: {
                     Image(systemName: "power")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.72))
+                        .settingsTextColor(.secondary)
                 }
             }
         }
@@ -1339,6 +1403,196 @@ private struct SettingsPanelContentView: View {
         }
     }
 
+    private var obsidianContent: some View {
+        let controlsDisabled = !settings.obsidianDailyTasksEnabled
+
+        return VStack(alignment: .leading, spacing: 18) {
+            SettingsSectionCard(title: "今日任务") {
+                SettingsToggleLine(
+                    title: "启用 Obsidian 今日任务",
+                    subtitle: "从本地 Daily note 读取 Markdown 任务进度，只在本机使用，不上传笔记内容。",
+                    isOn: $settings.obsidianDailyTasksEnabled
+                )
+                SettingsLineDivider()
+
+                SettingsEditablePathLine(
+                    title: "Obsidian Vault",
+                    subtitle: "选择 Obsidian 仓库根目录，便于确认 Daily 和模板路径都属于同一个仓库。",
+                    text: $settings.obsidianVaultPath,
+                    placeholder: "~/Documents/Obsidian Vault",
+                    buttonTitle: "选择",
+                    systemImage: "folder",
+                    action: selectObsidianVaultPath
+                )
+                .disabled(controlsDisabled)
+                .opacity(controlsDisabled ? 0.52 : 1)
+                SettingsLineDivider()
+
+                SettingsEditablePathLine(
+                    title: "Daily 笔记目录",
+                    subtitle: "选择 Calendar / Daily notes 实际生成每日笔记的目录；Jade Cub 会在这里查找今天的 Markdown 文件。",
+                    text: $settings.obsidianDailyDirectoryPath,
+                    placeholder: "~/Documents/Obsidian Vault/Daily",
+                    buttonTitle: "选择",
+                    systemImage: "calendar",
+                    action: selectObsidianDailyDirectory
+                )
+                .disabled(controlsDisabled)
+                .opacity(controlsDisabled ? 0.52 : 1)
+                SettingsLineDivider()
+
+                SettingsEditableTextLine(
+                    title: "文件名模式",
+                    subtitle: "使用 DateFormatter 格式，例如 yyyy-MM-dd。Jade Cub 会自动补 .md。",
+                    text: $settings.obsidianDailyFilenamePattern,
+                    placeholder: "yyyy-MM-dd"
+                )
+                .disabled(controlsDisabled)
+                .opacity(controlsDisabled ? 0.52 : 1)
+                SettingsLineDivider()
+
+                SettingsEditablePathLine(
+                    title: "模板路径",
+                    subtitle: "可选。记录 Calendar / Daily note 使用的模板文件；当前读取任务不需要模板，后续若加入自动创建今日笔记会使用它。",
+                    text: $settings.obsidianDailyTemplatePath,
+                    placeholder: "~/Documents/Obsidian Vault/Templates/Daily.md",
+                    buttonTitle: "选择",
+                    systemImage: "doc.text",
+                    action: selectObsidianTemplatePath
+                )
+                .disabled(controlsDisabled)
+                .opacity(controlsDisabled ? 0.52 : 1)
+            }
+
+            SettingsSectionCard(title: "预览") {
+                SettingsValueLine(
+                    title: "今日文件",
+                    value: obsidianTodayPathPreview
+                )
+                SettingsLineDivider()
+
+                SettingsValueLine(
+                    title: "当前进度",
+                    value: obsidianTaskProgressPreview
+                )
+                SettingsLineDivider()
+
+                SettingsActionLine(
+                    title: "重新读取",
+                    subtitle: obsidianTaskStore.lastError ?? "手动刷新当前 Daily note 的任务进度。"
+                ) {
+                    obsidianTaskStore.reloadConfiguration()
+                } accessory: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .semibold))
+                        .settingsTextColor(.secondary)
+                }
+                SettingsLineDivider()
+
+                SettingsActionLine(
+                    title: "打开今日笔记",
+                    subtitle: "使用 Obsidian 打开当前日期对应的 Markdown 文件。"
+                ) {
+                    obsidianTaskStore.openTodayNote()
+                } accessory: {
+                    Image(systemName: "arrow.up.forward.app")
+                        .font(.system(size: 14, weight: .semibold))
+                        .settingsTextColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private var obsidianTodayPathPreview: String {
+        ObsidianDailyTaskStore.defaultTodayNotePath(
+            directoryPath: settings.obsidianDailyDirectoryPath,
+            pattern: settings.obsidianDailyFilenamePattern
+        ) ?? "未设置"
+    }
+
+    private var obsidianTaskProgressPreview: String {
+        if let snapshot = obsidianTaskStore.snapshot {
+            return snapshot.displayText
+        }
+        return settings.obsidianDailyTasksEnabled ? "未读取" : "已关闭"
+    }
+
+    private func selectObsidianVaultPath() {
+        selectDirectoryPath(
+            message: "选择 Obsidian Vault",
+            currentPath: settings.obsidianVaultPath
+        ) { selectedPath in
+            settings.obsidianVaultPath = selectedPath
+        }
+    }
+
+    private func selectObsidianDailyDirectory() {
+        selectDirectoryPath(
+            message: "选择 Daily 笔记目录",
+            currentPath: settings.obsidianDailyDirectoryPath.isEmpty
+                ? settings.obsidianVaultPath
+                : settings.obsidianDailyDirectoryPath
+        ) { selectedPath in
+            settings.obsidianDailyDirectoryPath = selectedPath
+            obsidianTaskStore.reloadConfiguration()
+        }
+    }
+
+    private func selectObsidianTemplatePath() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.allowedContentTypes = [.text]
+        panel.directoryURL = panelDirectoryURL(
+            for: settings.obsidianDailyTemplatePath.isEmpty
+                ? settings.obsidianVaultPath
+                : settings.obsidianDailyTemplatePath
+        )
+        panel.message = "选择 Daily 模板文件"
+        panel.prompt = "选择"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.obsidianDailyTemplatePath = url.path
+        }
+    }
+
+    private func selectDirectoryPath(
+        message: String,
+        currentPath: String,
+        assign: (String) -> Void
+    ) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = panelDirectoryURL(for: currentPath)
+        panel.message = message
+        panel.prompt = "选择"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            assign(url.path)
+        }
+    }
+
+    private func panelDirectoryURL(for path: String) -> URL {
+        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else {
+            return FileManager.default.homeDirectoryForCurrentUser
+        }
+
+        var isDirectory: ObjCBool = false
+        let expandedPath = (trimmedPath as NSString).expandingTildeInPath
+        if FileManager.default.fileExists(atPath: expandedPath, isDirectory: &isDirectory),
+           !isDirectory.boolValue {
+            return URL(fileURLWithPath: expandedPath).deletingLastPathComponent()
+        }
+
+        return URL(fileURLWithPath: expandedPath, isDirectory: true)
+    }
+
     private func replayNotchDetachmentHint() {
         AppSettings.notchDetachmentHintPending = true
         AppSettings.floatingPetSettingsHintPending = true
@@ -1444,7 +1698,7 @@ private struct SettingsPanelContentView: View {
                     } accessory: {
                         Image(systemName: "play.fill")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.72))
+                            .settingsTextColor(.secondary)
                     }
                 }
 
@@ -1475,7 +1729,7 @@ private struct SettingsPanelContentView: View {
                     } accessory: {
                         Image(systemName: "square.and.arrow.down")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.72))
+                            .settingsTextColor(.secondary)
                     }
 
                     if soundPacks.availablePacks.isEmpty {
@@ -1551,7 +1805,7 @@ private struct SettingsPanelContentView: View {
                                 Text(appLocalized: "添加自定义配置")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .foregroundColor(.white.opacity(0.7))
+                            .settingsTextColor(.secondary)
                             .padding(.vertical, 4)
                             .contentShape(Rectangle())
                         }
@@ -1659,20 +1913,20 @@ private struct SettingsPanelContentView: View {
                     } accessory: {
                         Image(systemName: "doc.text.magnifyingglass")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.5))
+                            .settingsTextColor(.tertiary)
                     }
                 }
             }
 
             SettingsSectionCard(title: "链接") {
                 SettingsActionLine(title: "GitHub", subtitle: "打开 Issues 页面反馈问题") {
-                    if let url = URL(string: "https://github.com/erha19/ping-island/issues") {
+                    if let url = URL(string: "https://github.com/liuyuplus/jade-cub/issues") {
                         NSWorkspace.shared.open(url)
                     }
                 } accessory: {
                     Image(systemName: "arrow.up.right.square")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.5))
+                        .settingsTextColor(.tertiary)
                 }
 
                 SettingsLineDivider()
@@ -1690,7 +1944,7 @@ private struct SettingsPanelContentView: View {
                     } else {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.5))
+                            .settingsTextColor(.tertiary)
                     }
                 }
             }
@@ -1704,10 +1958,10 @@ private struct SettingsPanelContentView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text(appLocalized: "还没有添加任何远程主机")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
+                            .settingsTextColor(.primary)
                         Text(appLocalized: "添加后，Island 会通过 SSH 安装远程 bridge、改写远程 hooks，并建立一个双向转发通道。")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.white.opacity(0.58))
+                            .settingsTextColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.horizontal, 18)
@@ -1759,7 +2013,7 @@ private struct SettingsPanelContentView: View {
                             Text(appLocalized: "添加远程主机")
                                 .font(.system(size: 12, weight: .semibold))
                         }
-                        .foregroundColor(.white.opacity(0.7))
+                        .settingsTextColor(.secondary)
                         .padding(.vertical, 4)
                         .contentShape(Rectangle())
                     }
@@ -1772,7 +2026,7 @@ private struct SettingsPanelContentView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(appLocalized: "说明")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .settingsTextColor(.primary)
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text(appLocalized: "添加远程主机后，Island 会通过 SSH 检查环境、安装远程 bridge，并配置 Hooks。")
@@ -1780,7 +2034,7 @@ private struct SettingsPanelContentView: View {
                     Text(appLocalized: "如果不再需要远端集成，可在这里直接卸载 bridge；这会删除远端 `~/.ping-island` 并撤回 Island 托管的 hooks。")
                 }
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.white.opacity(0.62))
+                .settingsTextColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -1860,6 +2114,8 @@ private struct SettingsPanelContentView: View {
         switch event {
         case .processingStarted:
             return $settings.processingStartSoundEnabled
+        case .approvalRequired:
+            return $settings.approvalRequiredSoundEnabled
         case .attentionRequired:
             return $settings.attentionRequiredSoundEnabled
         case .taskCompleted:
@@ -1882,6 +2138,8 @@ private struct SettingsPanelContentView: View {
         switch event {
         case .processingStarted:
             return $settings.processingStartSound
+        case .approvalRequired:
+            return $settings.approvalRequiredSound
         case .attentionRequired:
             return $settings.attentionRequiredSound
         case .taskCompleted:
@@ -1992,7 +2250,7 @@ private struct SettingsPanelContentView: View {
         case .idle, .error:
             Image(systemName: "arrow.right.circle.fill")
                 .font(.system(size: 18))
-                .foregroundColor(.white.opacity(0.55))
+                .settingsTextColor(.tertiary)
         }
     }
 
@@ -2043,46 +2301,24 @@ struct NotchSettingsPopoverView: View {
 private struct SidebarItemView: View {
     let category: SettingsCategory
     let isSelected: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: category.icon)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white.opacity(isSelected ? 0.95 : 1))
-                .frame(width: 24, height: 24)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(
-                            isSelected
-                            ? LinearGradient(
-                                colors: [
-                                    category.tint.opacity(0.95),
-                                    category.tint.opacity(0.60)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                            : LinearGradient(
-                                colors: [
-                                    category.tint.opacity(0.92),
-                                    category.tint.opacity(0.74)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .foregroundColor(iconColor)
+                .frame(width: 20, height: 20)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(appLocalized: category.title)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white.opacity(isSelected ? 0.94 : 0.80))
+                    .foregroundColor(titleTextColor)
                     .lineLimit(1)
 
                 Text(appLocalized: category.subtitle)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(isSelected ? 0.60 : 0.42))
+                    .foregroundColor(subtitleTextColor)
                     .lineLimit(1)
             }
 
@@ -2090,21 +2326,74 @@ private struct SidebarItemView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
-        .padding(.vertical, 9)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(isSelected ? Color.white.opacity(0.12) : Color.white.opacity(0.02))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(itemFillColor)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(isSelected ? 0.10 : 0.04), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(itemBorderColor, lineWidth: 1)
         )
-        .shadow(color: isSelected ? category.tint.opacity(0.18) : .clear, radius: 14, y: 8)
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var primaryTextColor: Color {
+        colorScheme == .dark ? .white : Color.black.opacity(0.90)
+    }
+
+    private var titleTextColor: Color {
+        guard isSelected else {
+            return primaryTextColor.opacity(0.80)
+        }
+        return colorScheme == .dark ? Color.black.opacity(0.90) : Color.white.opacity(0.96)
+    }
+
+    private var subtitleTextColor: Color {
+        guard isSelected else {
+            return primaryTextColor.opacity(0.42)
+        }
+        return colorScheme == .dark ? Color.black.opacity(0.58) : Color.white.opacity(0.66)
+    }
+
+    private var iconColor: Color {
+        if isSelected {
+            return colorScheme == .dark ? .black : .white
+        }
+        return colorScheme == .dark ? .white.opacity(0.54) : Color.black.opacity(0.52)
+    }
+
+    private var itemFillColor: Color {
+        if colorScheme == .dark {
+            return isSelected ? Color.white.opacity(0.90) : Color.clear
+        }
+        return isSelected ? Color.black.opacity(0.88) : Color.clear
+    }
+
+    private var itemBorderColor: Color {
+        if colorScheme == .dark {
+            return Color.white.opacity(isSelected ? 0.0 : 0.08)
+        }
+        return Color.black.opacity(isSelected ? 0.0 : 0.06)
     }
 }
 
 private struct WindowControlButton: View {
+    enum Kind {
+        case close
+        case minimize
+
+        var systemImage: String {
+            switch self {
+            case .close:
+                return "xmark"
+            case .minimize:
+                return "minus"
+            }
+        }
+    }
+
+    let kind: Kind
     let color: Color
     let action: () -> Void
 
@@ -2117,6 +2406,12 @@ private struct WindowControlButton: View {
                     Circle()
                         .strokeBorder(Color.black.opacity(0.18), lineWidth: 0.5)
                 )
+                .overlay(
+                    Image(systemName: kind.systemImage)
+                        .font(.system(size: 7, weight: .black))
+                        .foregroundColor(Color.black.opacity(0.46))
+                        .frame(width: 12, height: 12)
+                )
         }
         .buttonStyle(.plain)
     }
@@ -2125,53 +2420,48 @@ private struct WindowControlButton: View {
 private struct SettingsSectionCard<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(appLocalized: title)
-                .font(.system(size: 15, weight: .bold))
-                .foregroundColor(.white)
-                .padding(.bottom, 10)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(primaryTextColor)
+                .padding(.bottom, 8)
 
             VStack(spacing: 0) {
                 content
             }
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(0.045))
-                    .overlay(
-                        SettingsGlassSurface(material: .hudWindow, blendingMode: .withinWindow)
-                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            .opacity(0.96)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.08),
-                                        Color.white.opacity(0.025),
-                                        Color.black.opacity(0.04)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    )
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(surfaceFillColor)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.11), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(borderColor, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(0.16), radius: 18, y: 10)
         }
+    }
+
+    private var primaryTextColor: Color {
+        colorScheme == .dark ? .white : Color.black.opacity(0.82)
+    }
+
+    private var surfaceFillColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.055) : .white
+    }
+
+    private var borderColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.10)
     }
 }
 
 private struct SettingsLineDivider: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Divider()
-            .overlay(Color.white.opacity(0.10))
+            .overlay(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.08))
             .padding(.horizontal, 18)
     }
 }
@@ -2185,6 +2475,7 @@ private struct HookManagementLine: View {
     let openConfigurationDirectoryAction: () -> Void
     let reinstallAction: () -> Void
     let uninstallAction: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2194,11 +2485,11 @@ private struct HookManagementLine: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(appLocalized: title)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
+                        .settingsTextColor(.primary)
 
                     Text(appLocalized: subtitle)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.58))
+                        .settingsTextColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -2206,16 +2497,16 @@ private struct HookManagementLine: View {
 
                 Text(appLocalized: isInstalled ? "已安装" : "未安装")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(isInstalled ? tint : .white.opacity(0.65))
+                    .foregroundColor(isInstalled ? tint : SettingsTheme.secondaryText(colorScheme))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
                         Capsule(style: .continuous)
-                            .fill((isInstalled ? tint : .white).opacity(isInstalled ? 0.18 : 0.08))
+                            .fill((isInstalled ? tint : SettingsTheme.secondaryText(colorScheme)).opacity(isInstalled ? 0.18 : 0.08))
                     )
                     .overlay(
                         Capsule(style: .continuous)
-                            .strokeBorder((isInstalled ? tint : .white).opacity(isInstalled ? 0.28 : 0.12), lineWidth: 1)
+                            .strokeBorder((isInstalled ? tint : SettingsTheme.secondaryText(colorScheme)).opacity(isInstalled ? 0.28 : 0.12), lineWidth: 1)
                     )
             }
 
@@ -2258,7 +2549,7 @@ private struct HookManagementLine: View {
 
                     Text(reinstallFeedback.message)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.76))
+                        .settingsTextColor(.secondary)
                 }
                 .padding(.horizontal, 2)
             }
@@ -2284,6 +2575,7 @@ private struct HookManagementLine: View {
 private struct CustomHookInstallationLine: View {
     let installation: HookInstaller.CustomHookInstallation
     let uninstallAction: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2293,11 +2585,11 @@ private struct CustomHookInstallationLine: View {
                 } else {
                     Image(systemName: "folder.badge.gearshape")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(SettingsTheme.primaryText(colorScheme))
                         .frame(width: 34, height: 34)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.white.opacity(0.08))
+                                .fill(SettingsTheme.subtleFill(colorScheme))
                         )
                 }
 
@@ -2305,7 +2597,7 @@ private struct CustomHookInstallationLine: View {
                     HStack(spacing: 6) {
                         Text(appLocalized: installation.profileTitle)
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
+                            .settingsTextColor(.primary)
 
                         Text(appLocalized: "自定义")
                             .font(.system(size: 10, weight: .bold))
@@ -2320,7 +2612,7 @@ private struct CustomHookInstallationLine: View {
 
                     Text(installation.customPath)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.5))
+                        .settingsTextColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -2611,13 +2903,14 @@ private struct RemoteHostManagementLine: View {
     let uninstallAction: (String?) -> Void
     let requestUninstallPasswordAction: () -> Void
     let removeAction: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 14) {
                 Image(systemName: "network")
                     .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(SettingsTheme.primaryText(colorScheme))
                     .frame(width: 34, height: 34)
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -2628,7 +2921,7 @@ private struct RemoteHostManagementLine: View {
                     HStack(spacing: 6) {
                         Text(endpoint.resolvedTitle)
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
+                            .settingsTextColor(.primary)
 
                         Text(appLocalized: runtimeState.phase.titleKey)
                             .font(.system(size: 10, weight: .bold))
@@ -2652,20 +2945,20 @@ private struct RemoteHostManagementLine: View {
                                     .font(.system(size: 9, weight: .semibold))
                             }
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.white.opacity(0.52))
+                            .settingsTextColor(.secondary)
                         }
                         .buttonStyle(.plain)
                     } else {
                         Text(endpoint.sshTarget)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.white.opacity(0.52))
+                            .settingsTextColor(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
 
                     Text(detailText)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.60))
+                        .settingsTextColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -2795,7 +3088,7 @@ private struct RemoteHostManagementLine: View {
         case .uninstalling:
             return TerminalColors.amber
         case .disconnected:
-            return .white.opacity(0.68)
+            return SettingsTheme.secondaryText(colorScheme)
         }
     }
 
@@ -3112,6 +3405,7 @@ private struct IDEExtensionManagementLine: View {
     let reinstallAction: () -> Void
     let authorizeAction: () -> Void
     let uninstallAction: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -3121,11 +3415,11 @@ private struct IDEExtensionManagementLine: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(appLocalized: profile.title)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
+                        .settingsTextColor(.primary)
 
                     Text(appLocalized: profile.subtitle)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.58))
+                        .settingsTextColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -3133,16 +3427,16 @@ private struct IDEExtensionManagementLine: View {
 
                 Text(appLocalized: isInstalled ? "已安装" : "未安装")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(isInstalled ? tint : .white.opacity(0.65))
+                    .foregroundColor(isInstalled ? tint : SettingsTheme.secondaryText(colorScheme))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
                         Capsule(style: .continuous)
-                            .fill((isInstalled ? tint : .white).opacity(isInstalled ? 0.18 : 0.08))
+                            .fill((isInstalled ? tint : SettingsTheme.secondaryText(colorScheme)).opacity(isInstalled ? 0.18 : 0.08))
                     )
                     .overlay(
                         Capsule(style: .continuous)
-                            .strokeBorder((isInstalled ? tint : .white).opacity(isInstalled ? 0.28 : 0.12), lineWidth: 1)
+                            .strokeBorder((isInstalled ? tint : SettingsTheme.secondaryText(colorScheme)).opacity(isInstalled ? 0.28 : 0.12), lineWidth: 1)
                     )
             }
 
@@ -3159,7 +3453,7 @@ private struct IDEExtensionManagementLine: View {
             if !isInstalled {
                 Text(appLocalized: "安装完成后，如编辑器尚未识别扩展，请重启对应 IDE 再点击“授权”。")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.44))
+                    .settingsTextColor(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -3236,13 +3530,14 @@ private struct SettingsClientIcon: View {
 
 private struct NativeRuntimePreviewSection: View {
     @ObservedObject var viewModel: SettingsPanelViewModel
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("独立于当前默认实现，仅用于手动体验新的原生 Claude/Codex runtime。")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.58))
+                    .settingsTextColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 10) {
@@ -3252,7 +3547,7 @@ private struct NativeRuntimePreviewSection: View {
                     )) {
                         Text("Claude Native Runtime")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white)
+                            .settingsTextColor(.primary)
                     }
                     .toggleStyle(.switch)
                     .controlSize(.small)
@@ -3264,7 +3559,7 @@ private struct NativeRuntimePreviewSection: View {
                     )) {
                         Text("Codex Native Runtime")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white)
+                            .settingsTextColor(.primary)
                     }
                     .toggleStyle(.switch)
                     .controlSize(.small)
@@ -3275,13 +3570,13 @@ private struct NativeRuntimePreviewSection: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("工作目录")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.7))
+                    .settingsTextColor(.secondary)
 
                 HStack(spacing: 8) {
                     TextField("", text: $viewModel.nativeRuntimeWorkingDirectory)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white)
+                        .foregroundColor(SettingsTheme.primaryText(colorScheme))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
                         .background(
@@ -3346,7 +3641,7 @@ private struct NativeRuntimePreviewSection: View {
                !nativeRuntimeStatusMessage.isEmpty {
                 Text(nativeRuntimeStatusMessage)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.68))
+                    .settingsTextColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -3386,16 +3681,16 @@ private struct NativeRuntimeQRCodeCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
+                    .settingsTextColor(.primary)
 
                 Text(subtitle)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.62))
+                    .settingsTextColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(url)
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.72))
+                    .settingsTextColor(.secondary)
                     .textSelection(.enabled)
                     .lineLimit(3)
 
@@ -3484,6 +3779,7 @@ private struct HookManagementButton: View {
     var isLoading = false
     var isDisabled = false
     let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
@@ -3491,27 +3787,39 @@ private struct HookManagementButton: View {
                 if isLoading {
                     ProgressView()
                         .controlSize(.small)
-                        .tint(.white.opacity(0.86))
+                        .tint(labelColor.opacity(0.86))
                 }
 
                 Text(appLocalized: title)
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(labelColor)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(
                 Capsule(style: .continuous)
-                    .fill(tint.opacity(0.22))
+                    .fill(fillColor)
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(tint.opacity(0.34), lineWidth: 1)
+                    .strokeBorder(strokeColor, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.72 : 1)
+    }
+
+    private var labelColor: Color {
+        colorScheme == .dark ? .white.opacity(0.92) : tint.opacity(0.88)
+    }
+
+    private var fillColor: Color {
+        tint.opacity(colorScheme == .dark ? 0.22 : 0.12)
+    }
+
+    private var strokeColor: Color {
+        tint.opacity(colorScheme == .dark ? 0.34 : 0.28)
     }
 }
 
@@ -3519,13 +3827,14 @@ private struct SettingsToggleLine: View {
     let title: String
     let subtitle: String?
     @Binding var isOn: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 16) {
                 Text(appLocalized: title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(primaryTextColor)
 
                 Spacer(minLength: 12)
 
@@ -3537,7 +3846,7 @@ private struct SettingsToggleLine: View {
             if let subtitle {
                 Text(appLocalized: subtitle)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.58))
+                    .foregroundColor(secondaryTextColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -3545,6 +3854,14 @@ private struct SettingsToggleLine: View {
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.clear)
+    }
+
+    private var primaryTextColor: Color {
+        colorScheme == .dark ? .white : Color.black.opacity(0.82)
+    }
+
+    private var secondaryTextColor: Color {
+        colorScheme == .dark ? .white.opacity(0.58) : Color.black.opacity(0.54)
     }
 }
 
@@ -3569,13 +3886,14 @@ private struct SettingsInfoLine<Accessory: View>: View {
     let title: String
     let subtitle: String?
     @ViewBuilder let accessory: Accessory
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 16) {
                 Text(appLocalized: title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(primaryTextColor)
 
                 Spacer(minLength: 12)
 
@@ -3585,13 +3903,21 @@ private struct SettingsInfoLine<Accessory: View>: View {
             if let subtitle {
                 Text(appLocalized: subtitle)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.58))
+                    .foregroundColor(secondaryTextColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var primaryTextColor: Color {
+        colorScheme == .dark ? .white : Color.black.opacity(0.82)
+    }
+
+    private var secondaryTextColor: Color {
+        colorScheme == .dark ? .white.opacity(0.58) : Color.black.opacity(0.54)
     }
 }
 
@@ -3608,7 +3934,7 @@ private struct SoundPackSourceInfoLine<Accessory: View>: View {
             HStack(alignment: .center, spacing: 16) {
                 Text(appLocalized: "当前主题包")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .settingsTextColor(.primary)
 
                 Spacer(minLength: 12)
 
@@ -3617,7 +3943,7 @@ private struct SoundPackSourceInfoLine<Accessory: View>: View {
 
             Text(appLocalized: "自动扫描以下目录，也支持手动导入本地目录。")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.white.opacity(0.58))
+                .settingsTextColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -3659,7 +3985,7 @@ private struct SoundPackImportActionLine<Accessory: View>: View {
                 HStack(alignment: .center, spacing: 16) {
                     Text(appLocalized: "导入本地主题包")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
+                        .settingsTextColor(.primary)
 
                     Spacer(minLength: 12)
 
@@ -3668,13 +3994,13 @@ private struct SoundPackImportActionLine<Accessory: View>: View {
 
                 Text(appLocalized: "选择一个本地目录，导入后会加入可选列表。")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.58))
+                    .settingsTextColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(appLocalized: "目录内需要包含以下清单文件")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.42))
+                        .settingsTextColor(.tertiary)
 
                     SettingsCodeCapsule(text: "openpeon.json", systemImage: "doc.text")
                 }
@@ -3691,16 +4017,17 @@ private struct SoundPackImportActionLine<Accessory: View>: View {
 private struct SettingsCodeCapsule: View {
     let text: String
     let systemImage: String
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.white.opacity(0.42))
+                .foregroundColor(SettingsTheme.tertiaryText(colorScheme))
 
             Text(text)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.74))
+                .foregroundColor(SettingsTheme.secondaryText(colorScheme))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -3709,11 +4036,11 @@ private struct SettingsCodeCapsule: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(SettingsTheme.subtleFill(colorScheme))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                .strokeBorder(SettingsTheme.subtleStroke(colorScheme), lineWidth: 1)
         )
     }
 }
@@ -3726,13 +4053,117 @@ private struct SettingsValueLine: View {
         HStack(spacing: 16) {
             Text(appLocalized: title)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
+                .settingsTextColor(.primary)
 
             Spacer(minLength: 12)
 
             Text(value)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white.opacity(0.72))
+                .settingsTextColor(.secondary)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SettingsEditablePathLine: View {
+    let title: String
+    let subtitle: String?
+    @Binding var text: String
+    let placeholder: String
+    let buttonTitle: String
+    let systemImage: String
+    let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(appLocalized: title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .settingsTextColor(.primary)
+
+                if let subtitle {
+                    Text(appLocalized: subtitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .settingsTextColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(SettingsTheme.tertiaryText(colorScheme))
+
+                    TextField("", text: $text, prompt: Text(appLocalized: placeholder))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(SettingsTheme.primaryText(colorScheme))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(SettingsTheme.subtleFill(colorScheme))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(SettingsTheme.subtleStroke(colorScheme), lineWidth: 1)
+                )
+
+                HookManagementButton(
+                    title: buttonTitle,
+                    tint: Color(red: 0.08, green: 0.10, blue: 0.09),
+                    action: action
+                )
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SettingsEditableTextLine: View {
+    let title: String
+    let subtitle: String?
+    @Binding var text: String
+    let placeholder: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(appLocalized: title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .settingsTextColor(.primary)
+
+                if let subtitle {
+                    Text(appLocalized: subtitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .settingsTextColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            TextField("", text: $text, prompt: Text(appLocalized: placeholder))
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundColor(SettingsTheme.primaryText(colorScheme))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(SettingsTheme.subtleFill(colorScheme))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(SettingsTheme.subtleStroke(colorScheme), lineWidth: 1)
+                )
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
@@ -3753,19 +4184,19 @@ private struct SettingsSliderLine: View {
             HStack(alignment: .firstTextBaseline, spacing: 16) {
                 Text(appLocalized: title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .settingsTextColor(.primary)
 
                 Spacer(minLength: 12)
 
                 Text(format(value))
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.72))
+                    .settingsTextColor(.secondary)
             }
 
             if let subtitle {
                 Text(appLocalized: subtitle)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.58))
+                    .settingsTextColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -3797,6 +4228,7 @@ private struct ShortcutRecorderControl: View {
     let action: GlobalShortcutAction
     @Binding var shortcut: GlobalShortcut?
     let defaultShortcut: GlobalShortcut?
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var isRecording = false
     @State private var helperTextKey: String?
@@ -3808,11 +4240,11 @@ private struct ShortcutRecorderControl: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(appLocalized: action.title)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
+                        .settingsTextColor(.primary)
 
                     Text(appLocalized: action.subtitle)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.58))
+                        .settingsTextColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -3824,15 +4256,15 @@ private struct ShortcutRecorderControl: View {
             HStack(alignment: .center, spacing: 8) {
                 Text(appLocalized: "当前键位")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.white.opacity(0.40))
+                    .settingsTextColor(.tertiary)
 
                 if let shortcut {
                     ShortcutVisualLabel(
                         shortcut: shortcut,
                         fontSize: 11,
-                        foregroundColor: .white.opacity(0.92),
-                        keyBackground: Color.black.opacity(0.28),
-                        keyBorder: Color.white.opacity(0.08),
+                        foregroundColor: SettingsTheme.primaryText(colorScheme),
+                        keyBackground: colorScheme == .dark ? Color.black.opacity(0.28) : Color.black.opacity(0.06),
+                        keyBorder: colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08),
                         keyMinWidth: 24,
                         keyHorizontalPadding: 7,
                         keyVerticalPadding: 5,
@@ -3841,7 +4273,7 @@ private struct ShortcutRecorderControl: View {
                 } else {
                     Text(appLocalized: "未设置")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.42))
+                        .settingsTextColor(.tertiary)
                 }
 
                 Spacer(minLength: 12)
@@ -3875,7 +4307,7 @@ private struct ShortcutRecorderControl: View {
 
             Text(appLocalized: helperTextKey ?? (isRecording ? "录制中，按 Esc 取消，Delete 清空" : "需要同时按下至少一个修饰键"))
                 .font(.system(size: 10, weight: .medium))
-                .foregroundColor(isRecording ? TerminalColors.green.opacity(0.90) : .white.opacity(0.42))
+                .foregroundColor(isRecording ? TerminalColors.green.opacity(0.90) : SettingsTheme.tertiaryText(colorScheme))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onDisappear {
@@ -3894,17 +4326,23 @@ private struct ShortcutRecorderControl: View {
                 Text(appLocalized: isRecording ? "按下新快捷键" : "点击录制")
                     .font(.system(size: 12, weight: .semibold))
             }
-            .foregroundColor(isRecording ? .black : .white.opacity(0.88))
+            .foregroundColor(isRecording ? .black : SettingsTheme.primaryText(colorScheme))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isRecording ? TerminalColors.green.opacity(0.96) : Color.white.opacity(0.08))
+                    .fill(
+                        isRecording
+                        ? TerminalColors.green.opacity(0.96)
+                        : (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.04))
+                    )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
-                        isRecording ? TerminalColors.green.opacity(0.9) : Color.white.opacity(0.10),
+                        isRecording
+                        ? TerminalColors.green.opacity(0.9)
+                        : (colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.08)),
                         lineWidth: 1
                     )
             )
@@ -3970,18 +4408,31 @@ private struct ShortcutRecorderControl: View {
 }
 
 private struct ShortcutIconButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 10, weight: .bold))
-            .foregroundColor(.white.opacity(configuration.isPressed ? 0.76 : 0.88))
+            .foregroundColor(
+                colorScheme == .dark
+                ? Color.white.opacity(configuration.isPressed ? 0.76 : 0.88)
+                : Color.black.opacity(configuration.isPressed ? 0.50 : 0.68)
+            )
             .frame(width: 28, height: 28)
             .background(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.11 : 0.055))
+                    .fill(
+                        colorScheme == .dark
+                        ? Color.white.opacity(configuration.isPressed ? 0.11 : 0.055)
+                        : Color.black.opacity(configuration.isPressed ? 0.07 : 0.035)
+                    )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
+                    .strokeBorder(
+                        colorScheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.07),
+                        lineWidth: 1
+                    )
             )
     }
 }
@@ -4019,20 +4470,21 @@ private struct UsageValueModePicker: View {
 struct IslandSurfaceModeSelector: View {
     @Binding var mode: IslandSurfaceMode
     var title: String? = "展示模式"
-    var subtitle: String? = "选择 Ping Island 的主显示方式。你随时可以在设置里切换，并立即看到新的渲染效果。"
+    var subtitle: String? = "选择 Jade Cub 的主显示方式。你随时可以在设置里切换，并立即看到新的渲染效果。"
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let title {
                 Text(appLocalized: title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(SettingsTheme.primaryText(colorScheme))
             }
 
             if let subtitle {
                 Text(appLocalized: subtitle)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.58))
+                    .foregroundColor(SettingsTheme.secondaryText(colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -4057,6 +4509,7 @@ struct IslandSurfaceModeCard: View {
     let isSelected: Bool
     let action: () -> Void
     @ObservedObject private var settings = AppSettings.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
@@ -4082,11 +4535,11 @@ struct IslandSurfaceModeCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(appLocalized: mode.title)
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(SettingsTheme.primaryText(colorScheme))
 
                         Text(appLocalized: mode.subtitle)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.white.opacity(0.62))
+                            .foregroundColor(SettingsTheme.secondaryText(colorScheme))
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -4094,18 +4547,18 @@ struct IslandSurfaceModeCard: View {
 
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(isSelected ? accentColor : .white.opacity(0.26))
+                        .foregroundColor(isSelected ? accentColor : SettingsTheme.tertiaryText(colorScheme))
                 }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(isSelected ? 0.09 : 0.035))
+                    .fill(cardFillColor)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(isSelected ? accentColor.opacity(0.56) : Color.white.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(isSelected ? accentColor.opacity(0.56) : SettingsTheme.subtleStroke(colorScheme), lineWidth: isSelected ? 1.5 : 1)
             )
             .shadow(color: isSelected ? accentColor.opacity(0.18) : .clear, radius: 16, y: 8)
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -4147,6 +4600,13 @@ struct IslandSurfaceModeCard: View {
 
     private var previewBorder: Color {
         isSelected ? accentColor.opacity(0.42) : Color.white.opacity(0.10)
+    }
+
+    private var cardFillColor: Color {
+        if isSelected {
+            return accentColor.opacity(colorScheme == .dark ? 0.09 : 0.11)
+        }
+        return SettingsTheme.subtleFill(colorScheme)
     }
 }
 
@@ -4267,15 +4727,17 @@ private struct DisplayPreviewMascotPicker: View {
 }
 
 private struct FloatingPetPlacementInfoCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(appLocalized: "独立悬浮宠物")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(SettingsTheme.primaryText(colorScheme))
 
             Text(appLocalized: "独立悬浮宠物默认贴近当前激活窗口右下角显示。拖动后会记住新位置，右键宠物形象可重新打开设置面板。")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.white.opacity(0.58))
+                .foregroundColor(SettingsTheme.secondaryText(colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 18)
@@ -4349,16 +4811,17 @@ private struct NotchDisplayPreviewMock: View {
 
 private struct NotchDisplayModeSelector: View {
     @Binding var mode: NotchDisplayMode
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(appLocalized: "刘海显示模式")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(SettingsTheme.primaryText(colorScheme))
 
             Text(appLocalized: "直接预览刘海闭合态效果。简约模式只显示宠物和数量，详细模式会额外显示中间过程信息。")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.white.opacity(0.58))
+                .foregroundColor(SettingsTheme.secondaryText(colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 12) {
@@ -4382,6 +4845,7 @@ private struct NotchDisplayModeCard: View {
     let isSelected: Bool
     let action: () -> Void
     @ObservedObject private var settings = AppSettings.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
@@ -4404,11 +4868,11 @@ private struct NotchDisplayModeCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(appLocalized: mode.title)
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(SettingsTheme.primaryText(colorScheme))
 
                         Text(appLocalized: mode.subtitle)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.white.opacity(0.62))
+                            .foregroundColor(SettingsTheme.secondaryText(colorScheme))
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -4416,18 +4880,18 @@ private struct NotchDisplayModeCard: View {
 
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(isSelected ? accentColor : .white.opacity(0.26))
+                        .foregroundColor(isSelected ? accentColor : SettingsTheme.tertiaryText(colorScheme))
                 }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(isSelected ? 0.09 : 0.035))
+                    .fill(cardFillColor)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(isSelected ? accentColor.opacity(0.56) : Color.white.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(isSelected ? accentColor.opacity(0.56) : SettingsTheme.subtleStroke(colorScheme), lineWidth: isSelected ? 1.5 : 1)
             )
             .shadow(color: isSelected ? accentColor.opacity(0.18) : .clear, radius: 16, y: 8)
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -4469,6 +4933,13 @@ private struct NotchDisplayModeCard: View {
 
     private var previewBorder: Color {
         isSelected ? accentColor.opacity(0.42) : Color.white.opacity(0.10)
+    }
+
+    private var cardFillColor: Color {
+        if isSelected {
+            return accentColor.opacity(colorScheme == .dark ? 0.09 : 0.11)
+        }
+        return SettingsTheme.subtleFill(colorScheme)
     }
 
     @ViewBuilder
@@ -4518,6 +4989,7 @@ private struct SettingsStatusLine: View {
     let status: String
     let statusColor: Color
     let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
@@ -4525,7 +4997,7 @@ private struct SettingsStatusLine: View {
                 HStack(alignment: .center, spacing: 16) {
                     Text(appLocalized: title)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(SettingsTheme.primaryText(colorScheme))
 
                     Spacer(minLength: 12)
 
@@ -4536,14 +5008,14 @@ private struct SettingsStatusLine: View {
 
                         Image(systemName: "arrow.up.right.square")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(SettingsTheme.tertiaryText(colorScheme))
                     }
                 }
 
                 if let subtitle {
                     Text(appLocalized: subtitle)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.58))
+                        .foregroundColor(SettingsTheme.secondaryText(colorScheme))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -4561,13 +5033,14 @@ private struct SoundEventSettingsLine: View {
     @Binding var isEnabled: Bool
     @Binding var selectedSound: NotificationSound
     let preview: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 16) {
                 Text(appLocalized: event.title)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(SettingsTheme.primaryText(colorScheme))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .layoutPriority(1)
@@ -4592,11 +5065,11 @@ private struct SoundEventSettingsLine: View {
                     Button(action: preview) {
                         Image(systemName: "play.fill")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.white.opacity(isEnabled ? 0.82 : 0.4))
+                            .foregroundColor(playIconColor)
                             .frame(width: 26, height: 26)
                             .background(
                                 Circle()
-                                    .fill(Color.white.opacity(isEnabled ? 0.08 : 0.03))
+                                    .fill(playButtonFill)
                             )
                     }
                     .buttonStyle(.plain)
@@ -4606,12 +5079,25 @@ private struct SoundEventSettingsLine: View {
 
             Text(appLocalized: event.subtitle)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.white.opacity(0.58))
+                .foregroundColor(SettingsTheme.secondaryText(colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
+    }
+
+    private var playIconColor: Color {
+        if colorScheme == .dark {
+            return .white.opacity(isEnabled ? 0.82 : 0.4)
+        }
+        return Color.black.opacity(isEnabled ? 0.62 : 0.30)
+    }
+
+    private var playButtonFill: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(isEnabled ? 0.08 : 0.03)
+            : Color.black.opacity(isEnabled ? 0.055 : 0.025)
     }
 }
 
@@ -4619,6 +5105,7 @@ private struct SoundPackEventLine: View {
     let event: NotificationEvent
     @Binding var isEnabled: Bool
     let preview: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     private var categorySummary: String {
         event.cespCategories.joined(separator: ", ")
@@ -4629,7 +5116,7 @@ private struct SoundPackEventLine: View {
             HStack(alignment: .center, spacing: 16) {
                 Text(appLocalized: event.title)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(SettingsTheme.primaryText(colorScheme))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .layoutPriority(1)
@@ -4644,11 +5131,11 @@ private struct SoundPackEventLine: View {
                     Button(action: preview) {
                         Image(systemName: "play.fill")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.white.opacity(isEnabled ? 0.82 : 0.4))
+                            .foregroundColor(playIconColor)
                             .frame(width: 26, height: 26)
                             .background(
                                 Circle()
-                                    .fill(Color.white.opacity(isEnabled ? 0.08 : 0.03))
+                                    .fill(playButtonFill)
                             )
                     }
                     .buttonStyle(.plain)
@@ -4658,16 +5145,29 @@ private struct SoundPackEventLine: View {
 
             Text(appLocalized: event.subtitle)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.white.opacity(0.58))
+                .foregroundColor(SettingsTheme.secondaryText(colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
 
             Text(categorySummary)
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.42))
+                .foregroundColor(SettingsTheme.tertiaryText(colorScheme))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
+    }
+
+    private var playIconColor: Color {
+        if colorScheme == .dark {
+            return .white.opacity(isEnabled ? 0.82 : 0.4)
+        }
+        return Color.black.opacity(isEnabled ? 0.62 : 0.30)
+    }
+
+    private var playButtonFill: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(isEnabled ? 0.08 : 0.03)
+            : Color.black.opacity(isEnabled ? 0.055 : 0.025)
     }
 }
 
@@ -4676,13 +5176,14 @@ private struct BundledThemeEventLine: View {
     let soundLabel: String
     @Binding var isEnabled: Bool
     let preview: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 16) {
                 Text(appLocalized: event.title)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(SettingsTheme.primaryText(colorScheme))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .layoutPriority(1)
@@ -4697,11 +5198,11 @@ private struct BundledThemeEventLine: View {
                     Button(action: preview) {
                         Image(systemName: "play.fill")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.white.opacity(isEnabled ? 0.82 : 0.4))
+                            .foregroundColor(playIconColor)
                             .frame(width: 26, height: 26)
                             .background(
                                 Circle()
-                                    .fill(Color.white.opacity(isEnabled ? 0.08 : 0.03))
+                                    .fill(playButtonFill)
                             )
                     }
                     .buttonStyle(.plain)
@@ -4711,15 +5212,28 @@ private struct BundledThemeEventLine: View {
 
             Text(appLocalized: event.subtitle)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.white.opacity(0.58))
+                .foregroundColor(SettingsTheme.secondaryText(colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
 
             Text(AppLocalization.format("固定音效：%@", soundLabel))
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.42))
+                .foregroundColor(SettingsTheme.tertiaryText(colorScheme))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
+    }
+
+    private var playIconColor: Color {
+        if colorScheme == .dark {
+            return .white.opacity(isEnabled ? 0.82 : 0.4)
+        }
+        return Color.black.opacity(isEnabled ? 0.62 : 0.30)
+    }
+
+    private var playButtonFill: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(isEnabled ? 0.08 : 0.03)
+            : Color.black.opacity(isEnabled ? 0.055 : 0.025)
     }
 }

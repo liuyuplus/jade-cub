@@ -61,7 +61,7 @@
 "最大面板高度" = "最大面板高度";
 "控制聊天面板和 hover 预览的最大展开高度" = "控制聊天面板和 hover 预览的最大展开高度";
 "展示模式" = "展示模式";
-"选择 Ping Island 的主显示方式。你随时可以在设置里切换，并立即看到新的渲染效果。" = "选择 Ping Island 的主显示方式。你随时可以在设置里切换，并立即看到新的渲染效果。";
+"选择 Jade Cub 的主显示方式。你随时可以在设置里切换，并立即看到新的渲染效果。" = "选择 Jade Cub 的主显示方式。你随时可以在设置里切换，并立即看到新的渲染效果。";
 "刘海屏方式" = "刘海屏方式";
 "固定在屏幕顶部中央，沿用 Island 刘海/胶囊体验" = "固定在屏幕顶部中央，沿用 Island 刘海/胶囊体验";
 "独立悬浮宠物" = "独立悬浮宠物";
@@ -84,7 +84,7 @@
 "独立悬浮宠物默认贴近当前激活窗口右下角显示。拖动后会记住新位置，右键宠物形象可重新打开设置面板。" = "独立悬浮宠物默认贴近当前激活窗口右下角显示。拖动后会记住新位置，右键宠物形象可重新打开设置面板。";
 "进入独立悬浮宠物模式后，右键宠物形象可重新打开设置面板。" = "进入独立悬浮宠物模式后，右键宠物形象可重新打开设置面板。";
 "首次使用，选择展示方式" = "首次使用，选择展示方式";
-"你可以把 Ping Island 放在屏幕顶部，也可以让宠物默认贴近当前激活窗口右下角显示。之后都能在设置里随时切换。" = "你可以把 Ping Island 放在屏幕顶部，也可以让宠物默认贴近当前激活窗口右下角显示。之后都能在设置里随时切换。";
+"你可以把 Jade Cub 放在屏幕顶部，也可以让宠物默认贴近当前激活窗口右下角显示。之后都能在设置里随时切换。" = "你可以把 Jade Cub 放在屏幕顶部，也可以让宠物默认贴近当前激活窗口右下角显示。之后都能在设置里随时切换。";
 "拖动宠物，让宠物离岛工作" = "拖动宠物，让宠物离岛工作";
 "最后一步：右键宠物形象" = "最后一步：右键宠物形象";
 "需要重新打开设置面板时，直接右键宠物形象就可以。" = "需要重新打开设置面板时，直接右键宠物形象就可以。";
@@ -103,6 +103,8 @@
 "启用提示音" = "启用提示音";
 "10 分钟静音通知和声音" = "10 分钟静音通知和声音";
 "通知与声音已静音至 %@，点击恢复" = "通知与声音已静音至 %@，点击恢复";
+"10 分钟静音 Jade Cub 通知和提示音" = "10 分钟静音 Jade Cub 通知和提示音";
+"Jade Cub 通知和提示音已静音至 %@，点击恢复" = "Jade Cub 通知和提示音已静音至 %@，点击恢复";
 "已静音至 %@" = "已静音至 %@";
 "不同阶段可分别播放不同音效，适用于 Claude、Codex 等会话。" = "不同阶段可分别播放不同音效，适用于 Claude、Codex 等会话。";
 "声音模式" = "声音模式";
@@ -135,7 +137,7 @@
 "IDE 扩展" = "IDE 扩展";
 "系统权限" = "系统权限";
 "辅助功能" = "辅助功能";
-"管理 ~/.claude/settings.json，使用统一 PingIslandBridge hooks 入口" = "管理 ~/.claude/settings.json，使用统一 PingIslandBridge hooks 入口";
+"管理 ~/.claude/settings.json，使用统一 Jade Cub Bridge hooks 入口" = "管理 ~/.claude/settings.json，使用统一 Jade Cub Bridge hooks 入口";
 "管理 ~/.codex/hooks.json" = "管理 ~/.codex/hooks.json";
 "管理 ~/.gemini/settings.json，按 Gemini CLI 官方 hooks 协议接入 Island" = "管理 ~/.gemini/settings.json，按 Gemini CLI 官方 hooks 协议接入 Island";
 "管理 ~/.codebuddy/settings.json，按 CodeBuddy Hooks 协议接入 Island" = "管理 ~/.codebuddy/settings.json，按 CodeBuddy Hooks 协议接入 Island";
@@ -144,9 +146,9 @@
 "管理 ~/.qoder/settings.json，支持 Qoder 会话、提问与权限提醒事件" = "管理 ~/.qoder/settings.json，支持 Qoder 会话、提问与权限提醒事件";
 "管理 ~/.qoderwork/settings.json，按 Qoder CLI 同款 Claude Hooks 协议接入 Island" = "管理 ~/.qoderwork/settings.json，按 Qoder CLI 同款 Claude Hooks 协议接入 Island";
 "生成 GitHub Copilot hooks JSON，兼容 Copilot CLI / Agent 的 .github/hooks 协议" = "生成 GitHub Copilot hooks JSON，兼容 Copilot CLI / Agent 的 .github/hooks 协议";
-"管理 ~/.config/opencode/plugins/ping-island.js，按 OpenCode 官方插件 hooks 接入 Island" = "管理 ~/.config/opencode/plugins/ping-island.js，按 OpenCode 官方插件 hooks 接入 Island";
-"安装 Ping Island，支持终端精准聚焦" = "安装 Ping Island，支持终端精准聚焦";
-"安装 Ping Island，支持会话跳转与终端精准聚焦" = "安装 Ping Island，支持会话跳转与终端精准聚焦";
+"管理 ~/.config/opencode/plugins/jade-cub.js，按 OpenCode 官方插件 hooks 接入 Island" = "管理 ~/.config/opencode/plugins/jade-cub.js，按 OpenCode 官方插件 hooks 接入 Island";
+"安装 Jade Cub，支持终端精准聚焦" = "安装 Jade Cub，支持终端精准聚焦";
+"安装 Jade Cub，支持会话跳转与终端精准聚焦" = "安装 Jade Cub，支持会话跳转与终端精准聚焦";
 "这会重新写入 %@ 的 Island hooks 配置，并保留其他非 Island hooks。" = "这会重新写入 %@ 的 Island hooks 配置，并保留其他非 Island hooks。";
 "这会重新生成 %@ 的 Island 插件文件，并覆盖旧的 Island 托管版本。" = "这会重新生成 %@ 的 Island 插件文件，并覆盖旧的 Island 托管版本。";
 "%lld%% 剩余" = "%lld%% 剩余";
@@ -393,7 +395,7 @@
 "远程转发已断开" = "远程转发已断开";
 "远程 bridge 已卸载" = "远程 bridge 已卸载";
 "远程卸载失败" = "远程卸载失败";
-"本地 PingIslandBridge 二进制不存在，无法安装到远程主机" = "本地 PingIslandBridge 二进制不存在，无法安装到远程主机";
+"本地 Jade Cub Bridge 二进制不存在，无法安装到远程主机" = "本地 Jade Cub Bridge 二进制不存在，无法安装到远程主机";
 "未找到 hooks 配置模板" = "未找到 hooks 配置模板";
 "远程桥接返回了无法识别的消息" = "远程桥接返回了无法识别的消息";
 "SSH attach 已断开" = "SSH attach 已断开";

@@ -1,1 +1,1 @@
-"NSAppleEventsUsageDescription" = "Ping Island 会通过 Apple Events 聚焦到与当前会话匹配的 iTerm、Ghostty、cmux 或终端窗口。";
+"NSAppleEventsUsageDescription" = "Jade Cub 会通过 Apple Events 聚焦终端窗口，并读取 Apple Music、Spotify 或网易云音乐的当前播放状态。";

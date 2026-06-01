@@ -11,6 +11,7 @@ struct AppLaunchConfiguration: Equatable {
     let shouldEnforceSingleInstance: Bool
     let shouldPresentSettingsWindowOnLaunch: Bool
     let activationPolicy: NSApplication.ActivationPolicy
+    let isDebuggerAttached: Bool
 
     init(
         environment: [String: String] = Foundation.ProcessInfo.processInfo.environment,
@@ -26,9 +27,10 @@ struct AppLaunchConfiguration: Equatable {
         self.shouldInstallIntegrations = !isRunningTests
         self.shouldCreateNotchWindow = !isRunningTests
         self.shouldObserveScreens = !isRunningTests
-        self.shouldEnforceSingleInstance = !isRunningTests && !isDebuggerAttached
+        self.shouldEnforceSingleInstance = !isRunningTests
         self.shouldPresentSettingsWindowOnLaunch = isUITesting || shouldShowSettings
         self.activationPolicy = isUITesting ? .regular : .accessory
+        self.isDebuggerAttached = isDebuggerAttached
     }
 
     private static func detectDebuggerAttached() -> Bool {

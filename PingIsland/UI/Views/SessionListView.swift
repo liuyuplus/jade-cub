@@ -15,6 +15,8 @@ struct SessionListView: View {
     @ObservedObject var viewModel: NotchViewModel
     var enableKeyboardNavigation = true
     var highlightedSessionStableID: String? = nil
+    var acknowledgedCompletedSessionStableIDs: Set<String> = []
+    var onAcknowledgeCompletedSession: (SessionState) -> Void = { _ in }
     @State private var expandedSessionStableID: String?
     @State private var selectedSessionStableID: String?
     @State private var keyEventMonitor: Any?
@@ -118,8 +120,10 @@ struct SessionListView: View {
                         isExpanded: expandedSessionStableID == group.session.stableId,
                         isSelected: selectedSessionStableID == group.session.stableId,
                         isHighlighted: highlightedSessionStableID == group.session.stableId,
+                        isCompletedAcknowledged: acknowledgedCompletedSessionStableIDs.contains(group.session.stableId),
                         isYabaiAvailable: isYabaiAvailable,
                         onSelect: { selectSession(group.session) },
+                        onAcknowledgeCompleted: { acknowledgeCompletedSessionIfNeeded(group.session) },
                         onActivate: { activateSession(group.session) },
                         onToggleExpanded: { toggleExpanded(group.session) },
                         onFocus: { activateSession(group.session) },
@@ -211,6 +215,7 @@ struct SessionListView: View {
     // MARK: - Actions
 
     private func activateSession(_ session: SessionState) {
+        acknowledgeCompletedSessionIfNeeded(session)
         guard !session.clientInfo.suppressesActivationNavigation else { return }
         Task {
             let targetSession = await interactionTargetSession(for: session)
@@ -219,6 +224,7 @@ struct SessionListView: View {
     }
 
     private func toggleExpanded(_ session: SessionState) {
+        acknowledgeCompletedSessionIfNeeded(session)
         selectSession(session)
         withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
             if expandedSessionStableID == session.stableId {
@@ -230,16 +236,35 @@ struct SessionListView: View {
     }
 
     private func openChat(_ session: SessionState) {
+        acknowledgeCompletedSessionIfNeeded(session)
         selectSession(session)
         Task {
             let targetSession = await interactionTargetSession(for: session)
+            if shouldOpenInExternalCodexThread(targetSession) {
+                await MainActor.run {
+                    viewModel.notchClose()
+                }
+                _ = await SessionLauncher.shared.activate(targetSession)
+                return
+            }
+
             await MainActor.run {
                 viewModel.showChat(for: targetSession)
             }
         }
     }
 
+    private func shouldOpenInExternalCodexThread(_ session: SessionState) -> Bool {
+        session.provider == .codex
+            && (
+                session.clientInfo.kind == .codexApp
+                    || session.clientInfo.bundleIdentifier == "com.openai.codex"
+                    || session.ingress == .codexAppServer
+            )
+    }
+
     private func openClient(_ session: SessionState) {
+        acknowledgeCompletedSessionIfNeeded(session)
         selectSession(session)
         Task {
             _ = await SessionLauncher.shared.activateClientApplication(session)
@@ -274,6 +299,11 @@ struct SessionListView: View {
     private func selectSession(_ session: SessionState) {
         guard selectedSessionStableID != session.stableId else { return }
         selectedSessionStableID = session.stableId
+    }
+
+    private func acknowledgeCompletedSessionIfNeeded(_ session: SessionState) {
+        guard SessionCompletionStateEvaluator.isCompletedReadySession(session) else { return }
+        onAcknowledgeCompletedSession(session)
     }
 
     private func syncSelection(with sessions: [SessionState]) {
@@ -531,7 +561,7 @@ private struct SubagentAttachmentRow: View {
     }
 
     private var ageLabel: String {
-        SessionPhaseHelpers.timeBadgeLabel(for: session.attentionRequestedAt ?? session.lastActivity)
+        SessionPhaseHelpers.activityBadgeLabel(for: session)
     }
 
     private var rowFill: Color {
@@ -639,8 +669,10 @@ struct InstanceRow: View {
     let isExpanded: Bool
     let isSelected: Bool
     let isHighlighted: Bool
+    let isCompletedAcknowledged: Bool
     let isYabaiAvailable: Bool
     let onSelect: () -> Void
+    let onAcknowledgeCompleted: () -> Void
     let onActivate: () -> Void
     let onToggleExpanded: () -> Void
     let onFocus: () -> Void
@@ -653,15 +685,26 @@ struct InstanceRow: View {
     let onReject: () -> Void
 
     @State private var isHovered = false
-    @State private var spinnerPhase = 0
     @ObservedObject private var settings = AppSettings.shared
-
-    private let spinnerSymbols = ["·", "✢", "✳", "∗", "✻", "✽"]
-    private let spinnerTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
     /// Whether we're showing the approval UI
     private var isWaitingForApproval: Bool {
         session.needsApprovalResponse
+    }
+
+    private var isCompletedReady: Bool {
+        SessionCompletionStateEvaluator.isCompletedReadySession(session)
+    }
+
+    private var shouldShowWaitingForInputBadge: Bool {
+        !(isCompletedReady && isCompletedAcknowledged)
+    }
+
+    private var avatarMascotStatus: MascotStatus {
+        if isCompletedReady && isCompletedAcknowledged {
+            return .idle
+        }
+        return MascotStatus(session: session)
     }
 
     /// Whether the pending tool requires interactive input (not just approve/deny)
@@ -774,7 +817,6 @@ struct InstanceRow: View {
         .padding(.leading, 10)
         .padding(.trailing, 12)
         .padding(.vertical, usesSingleLineCompactLayout ? 5 : 8)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: session.phase)
         .animation(.spring(response: 0.28, dampingFraction: 0.82), value: isExpanded)
         .saturation(isCollapsedCompactPresentation ? 0 : 1)
         .opacity(isCollapsedCompactPresentation ? 0.72 : 1)
@@ -810,21 +852,21 @@ struct InstanceRow: View {
                 baseLeadingContent
                     .onTapGesture(count: 2) {
                         onSelect()
-                        onChat()
+                        onActivate()
                     }
                     .onTapGesture {
                         onSelect()
-                        onActivate()
+                        onChat()
                     }
             } else {
                 baseLeadingContent
                     .onTapGesture(count: 2) {
                         onSelect()
-                        onChat()
+                        onActivate()
                     }
                     .onTapGesture {
                         onSelect()
-                        onActivate()
+                        onChat()
                     }
             }
         }
@@ -873,50 +915,61 @@ struct InstanceRow: View {
 
     @ViewBuilder
     private var avatarView: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.white.opacity(0.04))
 
             MascotView(
                 kind: settings.mascotKind(for: session.mascotClient),
-                status: MascotStatus(session: session),
+                status: avatarMascotStatus,
                 size: usesSingleLineCompactLayout ? 16 : 18
             )
             .padding(6)
-
+        }
+        .overlay(alignment: avatarStatusBadgeAlignment) {
             avatarStatusBadge
-                .offset(x: 2, y: 2)
+                .offset(avatarStatusBadgeOffset)
         }
         .frame(width: usesSingleLineCompactLayout ? 30 : 34, height: usesSingleLineCompactLayout ? 30 : 34)
     }
 
+    private var avatarStatusBadgeAlignment: Alignment {
+        avatarStatusBadgeKind == .thinking ? .bottom : .bottomTrailing
+    }
+
+    private var avatarStatusBadgeOffset: CGSize {
+        if avatarStatusBadgeKind == .thinking {
+            return CGSize(width: 0, height: usesSingleLineCompactLayout ? 7 : 8)
+        }
+
+        return CGSize(width: 6, height: 6)
+    }
+
     @ViewBuilder
     private var avatarStatusBadge: some View {
+        if let avatarStatusBadgeKind {
+            AvatarStatusSticker(
+                kind: avatarStatusBadgeKind,
+                accent: statusAccentColor,
+                size: usesSingleLineCompactLayout ? 12 : 13
+            )
+        }
+    }
+
+    private var avatarStatusBadgeKind: AvatarStatusStickerKind? {
+        if isCompletedReady {
+            return isCompletedAcknowledged ? nil : .completed
+        }
+
         switch session.phase {
-        case .processing, .compacting, .waitingForApproval:
-            Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
-                .font(.system(size: 8, weight: .black))
-                .foregroundColor(statusAccentColor)
-                .frame(width: 14, height: 14)
-                .background(Color.black.opacity(0.92))
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .strokeBorder(statusAccentColor.opacity(0.35), lineWidth: 1)
-                )
-                .onReceive(spinnerTimer) { _ in
-                    spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
-                }
+        case .processing, .compacting:
+            return .thinking
+        case .waitingForApproval:
+            return session.needsQuestionResponse ? .question : .approval
         case .waitingForInput:
-            Circle()
-                .fill(statusAccentColor)
-                .frame(width: 10, height: 10)
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.black.opacity(0.8), lineWidth: 2)
-                )
+            return shouldShowWaitingForInputBadge ? .question : nil
         case .idle, .ended:
-            EmptyView()
+            return nil
         }
     }
 
@@ -942,7 +995,7 @@ struct InstanceRow: View {
     }
 
     private var timeLabel: String {
-        SessionPhaseHelpers.timeBadgeLabel(for: session.attentionRequestedAt ?? session.lastActivity)
+        SessionPhaseHelpers.activityBadgeLabel(for: session)
     }
 
     private var ideHostBadgeTint: Color {
@@ -1310,6 +1363,7 @@ struct InstanceRow: View {
         if session.needsQuestionResponse {
             HStack(spacing: 6) {
                 IconButton(icon: "bubble.left") {
+                    onAcknowledgeCompleted()
                     onChat()
                 }
 
@@ -1335,21 +1389,44 @@ struct InstanceRow: View {
                 }
             }
         } else if isWaitingForApproval {
-            InlineApprovalButtons(
-                sessionAction: session.scopedApprovalAction,
-                onChat: onChat,
-                onApprove: onApprove,
-                onApproveForSession: onApproveForSession,
-                onReject: onReject
-            )
+            if session.intervention?.supportsInlineResponse == false {
+                HStack(spacing: 5) {
+                    IconButton(icon: "bubble.left") {
+                        onChat()
+                    }
+
+                    Button {
+                        onOpenClient()
+                    } label: {
+                        Text(verbatim: AppLocalization.format("打开 %@", interactionLabel))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.9))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
+                InlineApprovalButtons(
+                    sessionAction: session.scopedApprovalAction,
+                    onChat: onChat,
+                    onApprove: onApprove,
+                    onApproveForSession: onApproveForSession,
+                    onReject: onReject
+                )
+            }
         } else {
             HStack(spacing: 6) {
                 IconButton(icon: "bubble.left") {
+                    onAcknowledgeCompleted()
                     onChat()
                 }
 
                 if session.isInTmux && isYabaiAvailable {
                     IconButton(icon: "eye") {
+                        onAcknowledgeCompleted()
                         onFocus()
                     }
                 }
@@ -1460,6 +1537,120 @@ struct InstanceRow: View {
 
 }
 
+private enum AvatarStatusStickerKind {
+    case thinking
+    case approval
+    case question
+    case completed
+}
+
+private struct AvatarStatusSticker: View {
+    let kind: AvatarStatusStickerKind
+    let accent: Color
+    let size: CGFloat
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isFloating = false
+
+    private let ink = Color(red: 0.11, green: 0.07, blue: 0.12)
+    private let mintCompletion = Color(red: 0.43, green: 0.91, blue: 0.88)
+
+    var body: some View {
+        stickerBody
+            .offset(y: floatingOffsetY)
+            .rotationEffect(.degrees(rotation))
+            .shadow(color: kind == .thinking ? .clear : Color.black.opacity(0.28), radius: 2, x: 0, y: 1)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: animationDuration).repeatForever(autoreverses: true)) {
+                    isFloating = true
+                }
+            }
+            .onChange(of: reduceMotion) { _, isEnabled in
+                if isEnabled {
+                    isFloating = false
+                } else {
+                    withAnimation(.easeInOut(duration: animationDuration).repeatForever(autoreverses: true)) {
+                        isFloating = true
+                    }
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var stickerBody: some View {
+        switch kind {
+        case .thinking:
+            ThinkingDotsIndicator(
+                color: .white,
+                dotSize: max(2.4, size * 0.24),
+                spacing: max(1.6, size * 0.14)
+            )
+            .frame(width: size, height: size)
+        case .approval:
+            symbolBadge(symbol: "!", fill: TerminalColors.amber, foreground: ink, width: size, height: size)
+        case .question:
+            symbolBadge(symbol: "?", fill: accent, foreground: Color.white, width: size, height: size)
+        case .completed:
+            symbolBadge(symbol: "✓", fill: mintCompletion, foreground: ink, width: size + 1, height: size + 1)
+        }
+    }
+
+    private func symbolBadge(symbol: String, fill: Color, foreground: Color, width: CGFloat, height: CGFloat) -> some View {
+        Text(symbol)
+            .font(.system(size: symbolFontSize(for: symbol), weight: .black, design: .rounded))
+            .foregroundColor(foreground)
+            .frame(width: width, height: height)
+            .background(
+                Canvas { context, canvasSize in
+                    let rect = CGRect(x: 1.0, y: 1.0, width: canvasSize.width - 2.0, height: canvasSize.height - 2.0)
+                    let radius = kind == .approval ? canvasSize.width * 0.22 : canvasSize.width * 0.5
+                    let path = Path(roundedRect: rect, cornerRadius: radius)
+                    context.fill(path, with: .color(fill))
+                    context.stroke(path, with: .color(ink), lineWidth: 1.65)
+                }
+            )
+    }
+
+    private var rotation: Double {
+        switch kind {
+        case .thinking:
+            return 0
+        case .approval:
+            return 4
+        case .question:
+            return -5
+        case .completed:
+            return 0
+        }
+    }
+
+    private var floatingOffsetY: CGFloat {
+        guard kind != .thinking, !reduceMotion else {
+            return 0
+        }
+
+        return isFloating ? -1 : 0
+    }
+
+    private var animationDuration: TimeInterval {
+        switch kind {
+        case .thinking:
+            return 0.82
+        case .approval:
+            return 0.95
+        case .question:
+            return 1.05
+        case .completed:
+            return 1.30
+        }
+    }
+
+    private func symbolFontSize(for symbol: String) -> CGFloat {
+        symbol == "✓" ? size * 0.78 : size * 0.72
+    }
+}
+
 private struct QueuePreviewLine: Identifiable {
     let id: String
     let prefix: String?
@@ -1478,6 +1669,7 @@ struct InlineApprovalButtons: View {
     let onApproveForSession: () -> Void
     let onReject: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showChatButton = false
     @State private var showDenyButton = false
     @State private var showAllowButton = false
@@ -1490,7 +1682,7 @@ struct InlineApprovalButtons: View {
                 onChat()
             }
             .opacity(showChatButton ? 1 : 0)
-            .scaleEffect(showChatButton ? 1 : 0.8)
+            .scaleEffect(showChatButton ? 1 : 0.94)
 
             Button {
                 onReject()
@@ -1505,7 +1697,7 @@ struct InlineApprovalButtons: View {
             }
             .buttonStyle(.plain)
             .opacity(showDenyButton ? 1 : 0)
-            .scaleEffect(showDenyButton ? 1 : 0.8)
+            .scaleEffect(showDenyButton ? 1 : 0.94)
 
             if let sessionAction {
                 Button {
@@ -1521,7 +1713,7 @@ struct InlineApprovalButtons: View {
                 }
                 .buttonStyle(.plain)
                 .opacity(showSessionButton ? 1 : 0)
-                .scaleEffect(showSessionButton ? 1 : 0.8)
+                .scaleEffect(showSessionButton ? 1 : 0.94)
             }
 
             Button {
@@ -1537,19 +1729,29 @@ struct InlineApprovalButtons: View {
             }
             .buttonStyle(.plain)
             .opacity(showAllowButton ? 1 : 0)
-            .scaleEffect(showAllowButton ? 1 : 0.8)
+            .scaleEffect(showAllowButton ? 1 : 0.94)
         }
         .onAppear {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.0)) {
+            guard !reduceMotion else {
+                showChatButton = true
+                showDenyButton = true
+                showSessionButton = sessionAction != nil
+                showAllowButton = true
+                return
+            }
+
+            let revealAnimation = Animation.smooth(duration: 0.22)
+
+            withAnimation(revealAnimation.delay(0.0)) {
                 showChatButton = true
             }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.05)) {
+            withAnimation(revealAnimation.delay(0.05)) {
                 showDenyButton = true
             }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.1)) {
+            withAnimation(revealAnimation.delay(0.1)) {
                 showSessionButton = sessionAction != nil
             }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.15)) {
+            withAnimation(revealAnimation.delay(0.15)) {
                 showAllowButton = true
             }
         }

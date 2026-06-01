@@ -13,7 +13,7 @@ actor ToolApprovalHandler {
     static let shared = ToolApprovalHandler()
 
     /// Logger for tool approval (nonisolated static for cross-context access)
-    nonisolated static let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "Approval")
+    nonisolated static let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "Approval")
 
     private init() {}
 

@@ -64,8 +64,8 @@ class NotchViewModel: ObservableObject {
 
     private static let defaultClosedHeight = ScreenNotchMetrics.fallbackClosedHeight
     private static let defaultClosedWidth: CGFloat = 266
-    private static let physicalNotchClosedWidthPadding: CGFloat = 164
-    private static let physicalNotchClosedMinimumWidth: CGFloat = 352
+    private static let physicalNotchClosedWidthPadding: CGFloat = 188
+    private static let physicalNotchClosedMinimumWidth: CGFloat = 376
     private static let manualTabPanelMaximumWidth: CGFloat = 560
     private static let manualTabPanelMinimumContentHeight: CGFloat = 248
     private static let detachmentLongPressNarrowedWidthScale: CGFloat = 0.82

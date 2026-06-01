@@ -1,9 +1,16 @@
-Ping Island
-Copyright 2026 Ping Island contributors
+Jade Cub
+Copyright 2026 Jade Cub contributors
 
-Ping Island is an independent project. It draws inspiration from
-claude-island by Farouq Aldori, but it is not a full fork or a verbatim
-derivative of that project.
+Jade Cub is a renamed and modified derivative of Ping Island by erha19.
+Ping Island is distributed under the Apache License, Version 2.0.
+
+This project also follows the broader lineage of notch-first agent monitors,
+including claude-island by Farouq Aldori. Existing upstream copyright,
+license, and attribution notices are preserved where applicable.
+
+Modifications made for Jade Cub include Codex-first product behavior,
+visual and settings UI changes, Jade Cub branding, Obsidian daily task
+configuration, packaging updates, and other local workflow adjustments.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this work except in compliance with the License.

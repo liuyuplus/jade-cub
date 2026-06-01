@@ -353,6 +353,7 @@ extension MascotStatus {
 enum CodexMascotExpression: Sendable, Equatable {
     case automatic
     case music
+    case failed
 }
 
 struct MascotView: View {
@@ -1960,6 +1961,7 @@ private struct CodexMintBearMascotView: View {
     var expression: CodexMascotExpression
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         Group {
@@ -1977,16 +1979,21 @@ private struct CodexMintBearMascotView: View {
 
     private func frame(time: TimeInterval) -> some View {
         let motion = spriteMotion(time: time)
+        let renderSize = pixelSnapped(size * 1.04)
+        let motionOffset = CGSize(
+            width: pixelSnapped(motion.x),
+            height: pixelSnapped(motion.y)
+        )
 
         return ZStack(alignment: .topLeading) {
             Image(assetName)
                 .resizable()
                 .interpolation(.none)
                 .scaledToFit()
-                .frame(width: size * 1.04, height: size * 1.04)
+                .frame(width: renderSize, height: renderSize)
                 .scaleEffect(x: motion.scaleX, y: motion.scaleY, anchor: .center)
                 .rotationEffect(.degrees(motion.rotation))
-                .offset(x: motion.x, y: motion.y)
+                .offset(x: motionOffset.width, y: motionOffset.height)
 
             if showsSleepOverlay {
                 FloatingZOverlay(size: size, time: time)
@@ -1997,9 +2004,17 @@ private struct CodexMintBearMascotView: View {
         .frame(width: size, height: size)
     }
 
+    private func pixelSnapped(_ value: CGFloat) -> CGFloat {
+        guard displayScale > 0 else { return value }
+        return (value * displayScale).rounded() / displayScale
+    }
+
     private var assetName: String {
         if expression == .music {
             return "CodexMintBearMusic"
+        }
+        if expression == .failed {
+            return "CodexMintBearFailed"
         }
 
         switch status {

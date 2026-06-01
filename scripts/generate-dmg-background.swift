@@ -7,28 +7,14 @@ struct Configuration {
     let outputPath: String
     let width: Int
     let height: Int
-}
-
-struct Layout {
-    let titleFontSize: CGFloat
-    let titleY: CGFloat
-    let titleHeight: CGFloat
-    let cornerInset: CGFloat
-    let cornerLength: CGFloat
-    let cornerStroke: CGFloat
-    let arrowStart: CGPoint
-    let arrowEnd: CGPoint
-    let captionRect: NSRect
-    let captionFontSize: CGFloat
-    let captionKern: CGFloat
-    let bottomInset: CGFloat
+    let mascotPath: String?
 }
 
 struct LCG {
     private var state: UInt64
 
     init(seed: UInt64) {
-        self.state = seed
+        state = seed
     }
 
     mutating func next() -> UInt64 {
@@ -41,8 +27,26 @@ struct LCG {
     }
 }
 
+func scriptURL() -> URL {
+    let rawPath = CommandLine.arguments.first ?? "scripts/generate-dmg-background.swift"
+    if rawPath.hasPrefix("/") {
+        return URL(fileURLWithPath: rawPath).standardizedFileURL
+    }
+
+    return URL(fileURLWithPath: rawPath, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)).standardizedFileURL
+}
+
+func defaultMascotPath() -> String {
+    scriptURL()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("PingIsland/Assets.xcassets/CodexMintBearIdle.imageset/CodexMintBearIdle.png")
+        .path
+}
+
 func parseArguments() throws -> Configuration {
     var outputPath: String?
+    var mascotPath: String?
     var width = 520
     var height = 360
 
@@ -59,6 +63,8 @@ func parseArguments() throws -> Configuration {
             if let value = iterator.next(), let parsed = Int(value) {
                 height = parsed
             }
+        case "--mascot":
+            mascotPath = iterator.next()
         default:
             continue
         }
@@ -66,82 +72,136 @@ func parseArguments() throws -> Configuration {
 
     guard let outputPath else {
         throw NSError(
-            domain: "PingIslandDMG",
+            domain: "JadeCubDMG",
             code: 64,
-            userInfo: [NSLocalizedDescriptionKey: "Usage: generate-dmg-background.swift --output <png-path> [--width <pixels>] [--height <pixels>]"]
+            userInfo: [NSLocalizedDescriptionKey: "Usage: generate-dmg-background.swift --output <png-path> [--width <pixels>] [--height <pixels>] [--mascot <png-path>]"]
         )
     }
 
-    return Configuration(outputPath: outputPath, width: width, height: height)
+    let resolvedMascot = mascotPath ?? defaultMascotPath()
+    return Configuration(outputPath: outputPath, width: width, height: height, mascotPath: resolvedMascot)
 }
 
-func drawCornerBracket(at origin: CGPoint, size: CGSize, lineWidth: CGFloat, flippedY: Bool) {
-    let path = NSBezierPath()
+func roundedRect(_ rect: NSRect, radius: CGFloat) -> NSBezierPath {
+    NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+}
+
+func fillLinearGradient(in rect: NSRect, colors: [NSColor], angle: CGFloat) {
+    NSGradient(colors: colors)?.draw(in: rect, angle: angle)
+}
+
+func strokeRoundedRect(_ rect: NSRect, radius: CGFloat, color: NSColor, lineWidth: CGFloat, dashPattern: [CGFloat] = []) {
+    let path = roundedRect(rect, radius: radius)
     path.lineWidth = lineWidth
-
-    if flippedY {
-        path.move(to: origin)
-        path.line(to: CGPoint(x: origin.x + size.width, y: origin.y))
-        path.move(to: origin)
-        path.line(to: CGPoint(x: origin.x, y: origin.y - size.height))
-    } else {
-        path.move(to: origin)
-        path.line(to: CGPoint(x: origin.x + size.width, y: origin.y))
-        path.move(to: origin)
-        path.line(to: CGPoint(x: origin.x, y: origin.y + size.height))
+    if !dashPattern.isEmpty {
+        path.setLineDash(dashPattern, count: dashPattern.count, phase: 0)
     }
-
-    NSColor(calibratedRed: 0.21, green: 0.23, blue: 0.26, alpha: 0.78).setStroke()
+    color.setStroke()
     path.stroke()
 }
 
-func drawInstallArrow(from start: CGPoint, to end: CGPoint) {
-    let color = NSColor(calibratedRed: 0.30, green: 0.32, blue: 0.36, alpha: 0.72)
-    let segmentWidth: CGFloat = 18
-    let segmentHeight: CGFloat = 4
-    let segmentGap: CGFloat = 12
-    let headGap: CGFloat = 14
+func drawText(
+    _ text: String,
+    in rect: NSRect,
+    font: NSFont,
+    color: NSColor,
+    alignment: NSTextAlignment = .center,
+    kern: CGFloat = 0
+) {
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.alignment = alignment
+    paragraph.lineBreakMode = .byTruncatingTail
 
-    for index in 0..<3 {
-        let originX = start.x + CGFloat(index) * (segmentWidth + segmentGap)
-        let rect = NSRect(x: originX, y: start.y - segmentHeight / 2, width: segmentWidth, height: segmentHeight)
-        let segment = NSBezierPath(roundedRect: rect, xRadius: segmentHeight / 2, yRadius: segmentHeight / 2)
-        color.setFill()
-        segment.fill()
-    }
+    let attributes: [NSAttributedString.Key: Any] = [
+        .font: font,
+        .foregroundColor: color,
+        .paragraphStyle: paragraph,
+        .kern: kern
+    ]
 
-    let segmentsEndX = start.x + (3 * segmentWidth) + (2 * segmentGap)
-    let tipX = max(end.x, segmentsEndX + headGap + 14)
-    let headBaseX = tipX - 14
-    let head = NSBezierPath()
-    head.lineWidth = 4
-    head.lineCapStyle = .round
-    head.lineJoinStyle = .round
-    head.move(to: CGPoint(x: headBaseX, y: end.y + 13))
-    head.line(to: CGPoint(x: tipX, y: end.y))
-    head.move(to: CGPoint(x: tipX, y: end.y))
-    head.line(to: CGPoint(x: headBaseX, y: end.y - 13))
-    color.setStroke()
-    head.stroke()
+    NSAttributedString(string: text, attributes: attributes).draw(in: rect)
 }
 
-func makeLayout(width: CGFloat, height: CGFloat) -> Layout {
-    Layout(
-        titleFontSize: width <= 700 ? 34 : 64,
-        titleY: width <= 700 ? height * 0.68 : height * 0.69,
-        titleHeight: width <= 700 ? 46 : 82,
-        cornerInset: width <= 700 ? 18 : 46,
-        cornerLength: width <= 700 ? 28 : 48,
-        cornerStroke: width <= 700 ? 3 : 4,
-        arrowStart: width <= 700 ? CGPoint(x: width * 0.405, y: height * 0.53) : CGPoint(x: width * 0.36, y: height * 0.39),
-        arrowEnd: width <= 700 ? CGPoint(x: width * 0.575, y: height * 0.53) : CGPoint(x: width * 0.64, y: height * 0.39),
-        captionRect: width <= 700
-            ? NSRect(x: width * 0.34, y: height * 0.22, width: width * 0.34, height: 42)
-            : NSRect(x: width * 0.39, y: height * 0.31, width: width * 0.22, height: 40),
-        captionFontSize: width <= 700 ? 16 : 28,
-        captionKern: width <= 700 ? 0.9 : 1.2,
-        bottomInset: width <= 700 ? 18 : 32
+func drawMascot(_ image: NSImage?, in rect: NSRect, alpha: CGFloat = 1.0) {
+    guard let image else { return }
+    image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: alpha)
+}
+
+func drawPaw(at point: CGPoint, scale: CGFloat, color: NSColor, rotation: CGFloat) {
+    let context = NSGraphicsContext.current?.cgContext
+    context?.saveGState()
+    context?.translateBy(x: point.x, y: point.y)
+    context?.rotate(by: rotation)
+
+    color.setFill()
+    let pad = NSBezierPath(ovalIn: NSRect(x: -4 * scale, y: -5 * scale, width: 8 * scale, height: 7 * scale))
+    pad.fill()
+
+    for toe in [
+        NSRect(x: -8 * scale, y: 3 * scale, width: 5 * scale, height: 5 * scale),
+        NSRect(x: -2.5 * scale, y: 6 * scale, width: 5 * scale, height: 5 * scale),
+        NSRect(x: 3 * scale, y: 3 * scale, width: 5 * scale, height: 5 * scale)
+    ] {
+        NSBezierPath(ovalIn: toe).fill()
+    }
+
+    context?.restoreGState()
+}
+
+func drawInstallTrail(from start: CGPoint, to end: CGPoint) {
+    let path = NSBezierPath()
+    path.move(to: start)
+    path.curve(
+        to: end,
+        controlPoint1: CGPoint(x: start.x + 145, y: start.y + 44),
+        controlPoint2: CGPoint(x: end.x - 165, y: end.y - 44)
     )
+    path.lineWidth = 7
+    path.lineCapStyle = .round
+    path.setLineDash([24, 18], count: 2, phase: 0)
+    NSColor(calibratedRed: 0.16, green: 0.58, blue: 0.39, alpha: 0.75).setStroke()
+    path.stroke()
+
+    let arrow = NSBezierPath()
+    arrow.lineWidth = 7
+    arrow.lineCapStyle = .round
+    arrow.lineJoinStyle = .round
+    arrow.move(to: CGPoint(x: end.x - 34, y: end.y + 25))
+    arrow.line(to: end)
+    arrow.line(to: CGPoint(x: end.x - 36, y: end.y - 23))
+    NSColor(calibratedRed: 0.13, green: 0.49, blue: 0.34, alpha: 0.86).setStroke()
+    arrow.stroke()
+
+    let pawColor = NSColor(calibratedRed: 0.15, green: 0.54, blue: 0.37, alpha: 0.34)
+    drawPaw(at: CGPoint(x: start.x + 86, y: start.y + 25), scale: 1.75, color: pawColor, rotation: -0.18)
+    drawPaw(at: CGPoint(x: start.x + 205, y: start.y + 13), scale: 1.55, color: pawColor, rotation: 0.1)
+    drawPaw(at: CGPoint(x: end.x - 150, y: end.y - 15), scale: 1.6, color: pawColor, rotation: 0.28)
+}
+
+func drawGround(width: CGFloat, height: CGFloat) {
+    let shadow = NSBezierPath()
+    shadow.move(to: CGPoint(x: 0, y: 0))
+    shadow.line(to: CGPoint(x: width, y: 0))
+    shadow.line(to: CGPoint(x: width, y: height * 0.14))
+    shadow.curve(
+        to: CGPoint(x: 0, y: height * 0.11),
+        controlPoint1: CGPoint(x: width * 0.70, y: height * 0.22),
+        controlPoint2: CGPoint(x: width * 0.26, y: height * 0.04)
+    )
+    shadow.close()
+    NSColor(calibratedRed: 0.88, green: 0.96, blue: 0.90, alpha: 0.82).setFill()
+    shadow.fill()
+
+    let ridge = NSBezierPath()
+    ridge.move(to: CGPoint(x: 0, y: height * 0.11))
+    ridge.curve(
+        to: CGPoint(x: width, y: height * 0.14),
+        controlPoint1: CGPoint(x: width * 0.26, y: height * 0.04),
+        controlPoint2: CGPoint(x: width * 0.70, y: height * 0.22)
+    )
+    ridge.lineWidth = 3
+    NSColor(calibratedRed: 0.42, green: 0.74, blue: 0.53, alpha: 0.28).setStroke()
+    ridge.stroke()
 }
 
 func drawBackground(configuration: Configuration) throws {
@@ -149,7 +209,6 @@ func drawBackground(configuration: Configuration) throws {
     let height = configuration.height
     let canvasWidth = CGFloat(width)
     let canvasHeight = CGFloat(height)
-    let layout = makeLayout(width: canvasWidth, height: canvasHeight)
 
     guard
         let bitmap = NSBitmapImageRep(
@@ -165,7 +224,7 @@ func drawBackground(configuration: Configuration) throws {
             bitsPerPixel: 0
         )
     else {
-        throw NSError(domain: "PingIslandDMG", code: 65, userInfo: [NSLocalizedDescriptionKey: "Failed to allocate bitmap"])
+        throw NSError(domain: "JadeCubDMG", code: 65, userInfo: [NSLocalizedDescriptionKey: "Failed to allocate bitmap"])
     }
 
     bitmap.size = NSSize(width: width, height: height)
@@ -173,7 +232,7 @@ func drawBackground(configuration: Configuration) throws {
     defer { NSGraphicsContext.restoreGraphicsState() }
 
     guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
-        throw NSError(domain: "PingIslandDMG", code: 66, userInfo: [NSLocalizedDescriptionKey: "Failed to create graphics context"])
+        throw NSError(domain: "JadeCubDMG", code: 66, userInfo: [NSLocalizedDescriptionKey: "Failed to create graphics context"])
     }
 
     NSGraphicsContext.current = context
@@ -181,68 +240,117 @@ func drawBackground(configuration: Configuration) throws {
     context.imageInterpolation = .high
 
     let canvas = NSRect(x: 0, y: 0, width: canvasWidth, height: canvasHeight)
-    let baseBackground = NSColor(calibratedRed: 0.985, green: 0.982, blue: 0.970, alpha: 1)
-    baseBackground.setFill()
-    canvas.fill()
+    fillLinearGradient(
+        in: canvas,
+        colors: [
+            NSColor(calibratedRed: 0.985, green: 0.992, blue: 0.972, alpha: 1),
+            NSColor(calibratedRed: 0.958, green: 0.984, blue: 0.948, alpha: 1)
+        ],
+        angle: 92
+    )
 
-    var random = LCG(seed: 42)
-    let starCount = Int(max(40, min(95, (canvasWidth * canvasHeight) / 10_000)))
-    for _ in 0..<starCount {
+    var random = LCG(seed: 20260601)
+    let speckCount = Int(max(54, min(120, (canvasWidth * canvasHeight) / 13_000)))
+    for _ in 0..<speckCount {
         let x = random.nextCGFloat() * canvasWidth
         let y = random.nextCGFloat() * canvasHeight
-        let size = max(1.0, random.nextCGFloat() * (canvasWidth <= 700 ? 2.3 : 3.0))
-        let alpha = 0.08 + (random.nextCGFloat() * 0.12)
-        let star = NSBezierPath(ovalIn: NSRect(x: x, y: y, width: size, height: size))
-        NSColor(calibratedRed: 0.35, green: 0.37, blue: 0.42, alpha: alpha).setFill()
-        star.fill()
+        let size = max(1.0, random.nextCGFloat() * 3.2)
+        let dot = NSBezierPath(ovalIn: NSRect(x: x, y: y, width: size, height: size))
+        NSColor(calibratedRed: 0.10, green: 0.36, blue: 0.25, alpha: 0.045 + random.nextCGFloat() * 0.045).setFill()
+        dot.fill()
     }
 
-    drawCornerBracket(
-        at: CGPoint(x: layout.cornerInset, y: canvasHeight - layout.cornerInset),
-        size: CGSize(width: layout.cornerLength, height: layout.cornerLength),
-        lineWidth: layout.cornerStroke,
-        flippedY: true
+    drawGround(width: canvasWidth, height: canvasHeight)
+
+    let mascotImage = configuration.mascotPath.flatMap { NSImage(contentsOfFile: $0) }
+    drawMascot(
+        mascotImage,
+        in: NSRect(x: canvasWidth * 0.065, y: canvasHeight * 0.055, width: canvasWidth * 0.115, height: canvasWidth * 0.115),
+        alpha: 0.98
     )
-    drawCornerBracket(
-        at: CGPoint(x: canvasWidth - layout.cornerInset, y: canvasHeight - layout.cornerInset),
-        size: CGSize(width: -layout.cornerLength, height: layout.cornerLength),
-        lineWidth: layout.cornerStroke,
-        flippedY: true
+    drawMascot(
+        mascotImage,
+        in: NSRect(x: canvasWidth * 0.772, y: canvasHeight * 0.662, width: canvasWidth * 0.15, height: canvasWidth * 0.15),
+        alpha: 0.07
     )
 
-    let bottomLine = NSBezierPath()
-    bottomLine.lineWidth = layout.cornerStroke - 1
-    bottomLine.move(to: CGPoint(x: layout.cornerInset - 4, y: layout.bottomInset))
-    bottomLine.line(to: CGPoint(x: canvasWidth - (layout.cornerInset - 4), y: layout.bottomInset))
-    NSColor(calibratedRed: 0.44, green: 0.46, blue: 0.50, alpha: 0.5).setStroke()
-    bottomLine.stroke()
+    let slotSize = canvasWidth <= 900 ? canvasWidth * 0.16 : 250
+    let appCenter = CGPoint(x: canvasWidth * 0.276, y: canvasHeight * 0.48)
+    let appSlot = NSRect(x: appCenter.x - slotSize / 2, y: appCenter.y - slotSize / 2, width: slotSize, height: slotSize)
+    roundedRect(appSlot, radius: slotSize * 0.18)
+        .addClip()
+    NSColor(calibratedRed: 0.90, green: 0.98, blue: 0.92, alpha: 0.56).setFill()
+    appSlot.fill()
+    context.cgContext.resetClip()
+    strokeRoundedRect(
+        appSlot,
+        radius: slotSize * 0.18,
+        color: NSColor(calibratedRed: 0.22, green: 0.54, blue: 0.38, alpha: 0.34),
+        lineWidth: 5,
+        dashPattern: [16, 12]
+    )
 
-    let titleStyle = NSMutableParagraphStyle()
-    titleStyle.alignment = .center
-    let titleAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.monospacedSystemFont(ofSize: layout.titleFontSize, weight: .regular),
-        .foregroundColor: NSColor(calibratedRed: 0.15, green: 0.17, blue: 0.20, alpha: 0.95),
-        .paragraphStyle: titleStyle,
-        .kern: canvasWidth <= 700 ? 1.2 : 2.0
-    ]
-    let title = NSAttributedString(string: "PING ISLAND", attributes: titleAttributes)
-    title.draw(in: NSRect(x: 0, y: layout.titleY, width: canvasWidth, height: layout.titleHeight))
+    let appsCenter = CGPoint(x: canvasWidth * 0.784, y: canvasHeight * 0.485)
+    let appsHalo = NSRect(x: appsCenter.x - slotSize * 0.58, y: appsCenter.y - slotSize * 0.52, width: slotSize * 1.16, height: slotSize * 1.04)
+    fillLinearGradient(
+        in: appsHalo,
+        colors: [
+            NSColor(calibratedRed: 0.85, green: 0.96, blue: 0.88, alpha: 0.38),
+            NSColor(calibratedRed: 0.94, green: 0.99, blue: 0.95, alpha: 0.12)
+        ],
+        angle: 10
+    )
+    strokeRoundedRect(
+        appsHalo,
+        radius: 36,
+        color: NSColor(calibratedRed: 0.29, green: 0.62, blue: 0.45, alpha: 0.12),
+        lineWidth: 3
+    )
 
-    drawInstallArrow(from: layout.arrowStart, to: layout.arrowEnd)
+    drawInstallTrail(
+        from: CGPoint(x: appSlot.maxX + canvasWidth * 0.026, y: canvasHeight * 0.50),
+        to: CGPoint(x: appsHalo.minX - canvasWidth * 0.045, y: canvasHeight * 0.50)
+    )
 
-    let captionStyle = NSMutableParagraphStyle()
-    captionStyle.alignment = .center
-    let captionAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.monospacedSystemFont(ofSize: layout.captionFontSize, weight: .regular),
-        .foregroundColor: NSColor(calibratedRed: 0.34, green: 0.36, blue: 0.40, alpha: 0.82),
-        .paragraphStyle: captionStyle,
-        .kern: layout.captionKern
-    ]
-    let caption = NSAttributedString(string: "drag to install", attributes: captionAttributes)
-    caption.draw(in: layout.captionRect)
+    let titleFontSize: CGFloat = canvasWidth <= 900 ? 48 : 86
+    let subtitleFontSize: CGFloat = canvasWidth <= 900 ? 16 : 25
+    drawText(
+        "Jade Cub",
+        in: NSRect(x: canvasWidth * 0.18, y: canvasHeight * 0.735, width: canvasWidth * 0.64, height: 112),
+        font: NSFont.systemFont(ofSize: titleFontSize, weight: .semibold),
+        color: NSColor(calibratedRed: 0.11, green: 0.18, blue: 0.15, alpha: 0.96),
+        kern: 0
+    )
+    drawText(
+        "Codex-first status island",
+        in: NSRect(x: canvasWidth * 0.25, y: canvasHeight * 0.695, width: canvasWidth * 0.50, height: 42),
+        font: NSFont.systemFont(ofSize: subtitleFontSize, weight: .medium),
+        color: NSColor(calibratedRed: 0.26, green: 0.40, blue: 0.34, alpha: 0.72),
+        kern: 0.4
+    )
+    drawText(
+        "drag to install",
+        in: NSRect(x: canvasWidth * 0.38, y: canvasHeight * 0.392, width: canvasWidth * 0.24, height: 44),
+        font: NSFont.monospacedSystemFont(ofSize: canvasWidth <= 900 ? 16 : 27, weight: .regular),
+        color: NSColor(calibratedRed: 0.22, green: 0.35, blue: 0.29, alpha: 0.62),
+        kern: 1.0
+    )
+
+    drawPaw(
+        at: CGPoint(x: canvasWidth * 0.905, y: canvasHeight * 0.16),
+        scale: canvasWidth <= 900 ? 1.1 : 1.9,
+        color: NSColor(calibratedRed: 0.16, green: 0.50, blue: 0.35, alpha: 0.16),
+        rotation: -0.16
+    )
+    drawPaw(
+        at: CGPoint(x: canvasWidth * 0.84, y: canvasHeight * 0.20),
+        scale: canvasWidth <= 900 ? 1.0 : 1.7,
+        color: NSColor(calibratedRed: 0.16, green: 0.50, blue: 0.35, alpha: 0.12),
+        rotation: 0.24
+    )
 
     guard let data = bitmap.representation(using: .png, properties: [:]) else {
-        throw NSError(domain: "PingIslandDMG", code: 67, userInfo: [NSLocalizedDescriptionKey: "Failed to encode PNG"])
+        throw NSError(domain: "JadeCubDMG", code: 67, userInfo: [NSLocalizedDescriptionKey: "Failed to encode PNG"])
     }
 
     let outputURL = URL(fileURLWithPath: configuration.outputPath)
@@ -258,6 +366,6 @@ do {
     let configuration = try parseArguments()
     try drawBackground(configuration: configuration)
 } catch {
-    fputs("error: \(error.localizedDescription)\n", stderr)
+    fputs("Failed to generate DMG background: \(error.localizedDescription)\n", stderr)
     exit(1)
 }

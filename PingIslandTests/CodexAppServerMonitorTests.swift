@@ -32,6 +32,94 @@ final class CodexAppServerMonitorTests: XCTestCase {
         XCTAssertEqual(clientInfo["name"] as? String, "Island")
     }
 
+    func testStdioRequestPayloadOmitsJSONRPCVersion() throws {
+        let payload = CodexAppServerMonitor.appServerRequestPayload(
+            id: "1",
+            method: "initialize",
+            params: [
+                "capabilities": [
+                    "experimentalApi": true
+                ]
+            ],
+            includeJSONRPCVersion: false
+        )
+
+        XCTAssertNil(payload["jsonrpc"])
+        XCTAssertEqual(payload["id"] as? String, "1")
+        XCTAssertEqual(payload["method"] as? String, "initialize")
+    }
+
+    func testPrefersRolloutSnapshotForNotLoadedDesktopThread() throws {
+        let clientInfo = SessionClientInfo(
+            kind: .codexApp,
+            name: "Codex App",
+            bundleIdentifier: "com.openai.codex",
+            sessionFilePath: "/tmp/rollout-thread.jsonl"
+        )
+
+        XCTAssertTrue(CodexAppServerMonitor.shouldPreferRolloutSnapshot(
+            appServerPhase: .idle,
+            intervention: nil,
+            status: ["type": "notLoaded"],
+            clientInfo: clientInfo
+        ))
+    }
+
+    func testDoesNotPreferRolloutSnapshotOverActiveAppServerStatus() throws {
+        let clientInfo = SessionClientInfo(
+            kind: .codexApp,
+            name: "Codex App",
+            bundleIdentifier: "com.openai.codex",
+            sessionFilePath: "/tmp/rollout-thread.jsonl"
+        )
+
+        XCTAssertFalse(CodexAppServerMonitor.shouldPreferRolloutSnapshot(
+            appServerPhase: .processing,
+            intervention: nil,
+            status: ["type": "active"],
+            clientInfo: clientInfo
+        ))
+    }
+
+    func testDoesNotPreferRolloutSnapshotOverFailureStatus() throws {
+        let clientInfo = SessionClientInfo(
+            kind: .codexApp,
+            name: "Codex App",
+            bundleIdentifier: "com.openai.codex",
+            sessionFilePath: "/tmp/rollout-thread.jsonl"
+        )
+
+        XCTAssertFalse(CodexAppServerMonitor.shouldPreferRolloutSnapshot(
+            appServerPhase: .idle,
+            intervention: nil,
+            status: [
+                "type": "systemError",
+                "message": "The Internet connection appears to be offline."
+            ],
+            clientInfo: clientInfo
+        ))
+    }
+
+    func testCodexStatusRecognizesSystemErrorAsFailure() throws {
+        let failure = try XCTUnwrap(CodexAppServerMonitor.failureStatusInfo(from: [
+            "type": "systemError",
+            "message": "The Internet connection appears to be offline."
+        ]))
+
+        XCTAssertTrue(failure.eventID.hasPrefix("codex-status-systemerror-"))
+        XCTAssertEqual(failure.reason, "The Internet connection appears to be offline.")
+    }
+
+    func testExtractsThreadIdFromRolloutFileName() throws {
+        XCTAssertEqual(
+            CodexAppServerMonitor.threadIdFromRolloutFileName(
+                "rollout-2026-05-18T14-02-48-019e39ae-0d1c-70c3-a7af-feef6265735f.jsonl"
+            ),
+            "019e39ae-0d1c-70c3-a7af-feef6265735f"
+        )
+        XCTAssertNil(CodexAppServerMonitor.threadIdFromRolloutFileName("session.jsonl"))
+    }
+
     func testGuardianReviewInterventionMapsMcpToolApprovalToExternalReminder() throws {
         let intervention = try XCTUnwrap(
             CodexAppServerMonitor.guardianReviewIntervention(from: [

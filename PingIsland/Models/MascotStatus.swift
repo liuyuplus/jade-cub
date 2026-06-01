@@ -4,6 +4,7 @@ import Foundation
 enum MascotStatus: String, Codable, CaseIterable, Sendable {
     case idle = "idle"
     case working = "working"
+    case completed = "completed"
     case warning = "warning"
     case dragging = "dragging"
     
@@ -11,6 +12,7 @@ enum MascotStatus: String, Codable, CaseIterable, Sendable {
         switch self {
         case .idle: return "空闲中"
         case .working: return "运行中"
+        case .completed: return "已完成"
         case .warning: return "警告状态"
         case .dragging: return "拖拽中"
         }
@@ -31,9 +33,6 @@ extension MascotStatus {
         }
     }
 
-    /// Closed-notch mascot behavior is intentionally more "alive" than row-level status:
-    /// once a warning is handled, any still-live session should return to the active animation
-    /// until it actually ends or disappears from the compact surface.
     static func closedNotchStatus(
         representativePhase: SessionPhase?,
         hasPendingPermission: Bool,
@@ -48,10 +47,12 @@ extension MascotStatus {
         }
 
         switch representativePhase {
-        case .ended:
-            return .idle
-        case .idle, .processing, .waitingForInput, .waitingForApproval, .compacting:
+        case .processing, .compacting:
             return .working
+        case .waitingForApproval:
+            return .warning
+        case .idle, .waitingForInput, .ended:
+            return .idle
         }
     }
 }

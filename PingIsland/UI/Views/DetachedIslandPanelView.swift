@@ -234,6 +234,8 @@ enum DetachedIslandContentModel {
             let width = min(widthLimit, 392)
             let height = min(viewModel.screenRect.height - 160, 260)
             return CGSize(width: width, height: max(190, height))
+        case .shelf, .music:
+            return viewModel.panelSize(for: .detached)
         case .chat:
             return viewModel.panelSize(for: .detached)
         }
@@ -664,6 +666,9 @@ struct DetachedIslandPanelView: View {
     private var compactMascotStatus: MascotStatus {
         if isPetDragging {
             return .dragging
+        }
+        if let activeCompletionNotification = bubbleViewState.activeCompletionNotification {
+            return activeCompletionNotification.kind.mascotStatus
         }
         return MascotStatus.closedNotchStatus(
             representativePhase: representativeSession?.phase,

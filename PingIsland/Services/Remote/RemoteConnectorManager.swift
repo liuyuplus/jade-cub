@@ -11,7 +11,7 @@ final class RemoteConnectorManager: ObservableObject {
     @Published private(set) var runtimeStates: [UUID: RemoteEndpointRuntimeState] = [:]
 
     private let defaults = UserDefaults.standard
-    private let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "Remote")
+    private let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "Remote")
     private let persistenceKey = "RemoteConnectorManager.endpoints.v1"
 
     private var eventHandler: (@Sendable (HookEvent) -> Void)?
@@ -1441,7 +1441,7 @@ private enum RemoteEndpointCredentialSource {
 }
 
 private struct RemoteEndpointCredentialStore {
-    private let service = "com.wudanwu.pingisland.remote-host-password"
+    private let service = "io.github.liuyuplus.jadecub.remote-host-password"
 
     func hasPassword(for endpointID: UUID) -> Bool {
         password(for: endpointID) != nil
@@ -1509,7 +1509,7 @@ private enum RemoteConnectorError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .localBridgeBinaryMissing:
-            return "本地 PingIslandBridge 二进制不存在，无法安装到远程主机"
+            return "本地 Jade Cub Bridge 二进制不存在，无法安装到远程主机"
         case .missingClaudeHookProfile:
             return "未找到 hooks 配置模板"
         case .invalidRemoteMessage:
@@ -1525,7 +1525,7 @@ private enum RemoteConnectorError: LocalizedError {
 }
 
 private final class RemoteAttachConnector {
-    nonisolated private static let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "Remote")
+    nonisolated private static let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "Remote")
 
     private let endpoint: RemoteEndpoint
     private let password: String?
@@ -1721,7 +1721,7 @@ private struct SSHExecutionResult {
 }
 
 private enum RemoteSSHCommandRunner {
-    private static let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "RemoteSSH")
+    private static let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "RemoteSSH")
 
     static func probe(target: String, port: Int, password: String?) async throws -> RemoteHostProbe {
         let command = #"printf "%s\n" "$USER" "$HOSTNAME" "$HOME"; uname -s; uname -m; command -v claude >/dev/null 2>&1 && echo "__PING_ISLAND_HAS_CLAUDE__=1" || echo "__PING_ISLAND_HAS_CLAUDE__=0"; command -v tmux >/dev/null 2>&1 && echo "__PING_ISLAND_HAS_TMUX__=1" || echo "__PING_ISLAND_HAS_TMUX__=0""#
@@ -2054,7 +2054,7 @@ private final class RemoteBridgeAssetResolver {
             return cachedBinaryURL
         }
 
-        let releaseURLString = "https://github.com/erha19/ping-island/releases/download/v\(version)/\(archiveAssetName)"
+        let releaseURLString = "https://github.com/liuyuplus/jade-cub/releases/download/v\(version)/\(archiveAssetName)"
         guard let releaseURL = URL(string: releaseURLString) else {
             throw RemoteConnectorError.remoteBridgeDownloadFailed(
                 AppLocalization.format("Linux 远程 bridge 下载地址无效：%@", releaseURLString)

@@ -44,6 +44,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.minSize = minimumContentSize
         window.maxSize = maximumContentSize
         window.setContentSize(defaultContentSize)
+        Self.applyRoundedContentMask(to: window, hostingView: hostingController.view)
         window.identifier = NSUserInterfaceItemIdentifier("settings.window")
         window.center()
         window.toolbar = nil
@@ -64,6 +65,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
                 self?.window?.miniaturize(nil)
             }
         )
+        Self.applyRoundedContentMask(to: window, hostingView: hostingController.view)
     }
 
     required init?(coder: NSCoder) {
@@ -80,6 +82,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             window.center()
         }
         showWindow(nil)
+        Self.applyRoundedContentMask(to: window)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
     }
@@ -91,6 +94,28 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         dismiss()
         return false
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        Self.applyRoundedContentMask(to: window)
+    }
+
+    private static func applyRoundedContentMask(to window: NSWindow, hostingView: NSView? = nil) {
+        let cornerRadius: CGFloat = 18
+        let views = [
+            window.contentView?.superview,
+            window.contentView,
+            hostingView
+        ].compactMap { $0 }
+
+        for view in views {
+            view.wantsLayer = true
+            view.layer?.backgroundColor = NSColor.clear.cgColor
+            view.layer?.cornerRadius = cornerRadius
+            view.layer?.cornerCurve = .continuous
+            view.layer?.masksToBounds = true
+        }
     }
 }
 
@@ -209,7 +234,7 @@ private struct PresentationModeWelcomeView: View {
                         .font(.system(size: 30, weight: .bold))
                         .foregroundColor(.white)
 
-                    Text(appLocalized: "你可以把 Ping Island 放在屏幕顶部，也可以让宠物默认贴近当前激活窗口右下角显示。之后都能在设置里随时切换。")
+                    Text(appLocalized: "你可以把 Jade Cub 放在屏幕顶部，也可以让宠物默认贴近当前激活窗口右下角显示。之后都能在设置里随时切换。")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.white.opacity(0.70))
                         .fixedSize(horizontal: false, vertical: true)

@@ -278,7 +278,7 @@ private struct MascotPosterView: View {
             appIconHero
 
             VStack(alignment: .leading, spacing: 22) {
-                Text("Ping Island")
+                Text("Jade Cub")
                     .font(.system(size: 138, weight: .black, design: .rounded))
                     .foregroundStyle(Color(red: 0.16, green: 0.12, blue: 0.08))
 

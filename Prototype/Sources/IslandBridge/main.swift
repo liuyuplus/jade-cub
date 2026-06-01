@@ -1,5 +1,6 @@
 import Foundation
 import IslandShared
+import Dispatch
 #if canImport(Darwin)
 import Darwin
 #elseif canImport(Musl)
@@ -24,7 +25,7 @@ struct IslandBridgeMain {
     private static let stdinInitialPollTimeoutMs = 100
     private static let stdinFollowUpPollTimeoutMs = 10
 
-    static func main() async {
+    static func main() {
         Self.configureProcessSignalHandling()
         do {
             switch try parseMode(arguments: CommandLine.arguments) {
@@ -88,6 +89,8 @@ struct IslandBridgeMain {
             case .remoteAgentAttach:
                 let controlSocket = try requiredArgument("--control-socket", arguments: CommandLine.arguments)
                 try RemoteAgentAttach.run(controlSocketPath: controlSocket)
+            case .nowPlaying:
+                try NowPlayingProbe.writeSnapshot()
             }
         } catch {
             FileHandle.standardError.write(Data("PingIslandBridge error: \(error.localizedDescription)\n".utf8))
@@ -554,7 +557,145 @@ private enum BridgeRuntimeMode: String {
     case hook
     case remoteAgentService = "remote-agent-service"
     case remoteAgentAttach = "remote-agent-attach"
+    case nowPlaying = "now-playing"
 }
+
+private struct NowPlayingProbeResponse: Codable {
+    let track: NowPlayingProbeTrack?
+    let diagnostic: String
+}
+
+private struct NowPlayingProbeTrack: Codable {
+    let title: String
+    let artist: String
+    let album: String
+    let duration: Double
+    let position: Double
+    let isPlaying: Bool
+    let timestampInterval: Double?
+    let artworkDataBase64: String?
+}
+
+#if canImport(Darwin)
+private enum NowPlayingProbe {
+    private typealias GetNowPlayingInfoFunction = @convention(c) (
+        DispatchQueue,
+        @escaping ([AnyHashable: Any]?) -> Void
+    ) -> Void
+
+    static func writeSnapshot() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(snapshot())
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data("\n".utf8))
+    }
+
+    private static func snapshot() -> NowPlayingProbeResponse {
+        guard let handle = dlopen(
+            "/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote",
+            RTLD_LAZY
+        ) else {
+            return NowPlayingProbeResponse(track: nil, diagnostic: "Bridge MediaRemote unavailable")
+        }
+
+        guard let symbol = dlsym(handle, "MRMediaRemoteGetNowPlayingInfo") else {
+            return NowPlayingProbeResponse(track: nil, diagnostic: "Bridge MediaRemote symbol unavailable")
+        }
+
+        let queue = DispatchQueue.global(qos: .userInitiated)
+        let getNowPlayingInfo = unsafeBitCast(symbol, to: GetNowPlayingInfoFunction.self)
+
+        let box = NowPlayingProbeBox(
+            response: NowPlayingProbeResponse(track: nil, diagnostic: "Bridge MediaRemote timed out")
+        )
+        let semaphore = DispatchSemaphore(value: 0)
+
+        getNowPlayingInfo(queue) { info in
+            box.response = response(from: info)
+            semaphore.signal()
+        }
+
+        if semaphore.wait(timeout: .now() + .milliseconds(900)) == .timedOut {
+            return NowPlayingProbeResponse(track: nil, diagnostic: "Bridge MediaRemote timed out")
+        }
+
+        return box.response
+    }
+
+    private static func response(from info: [AnyHashable: Any]?) -> NowPlayingProbeResponse {
+        guard let info else {
+            return NowPlayingProbeResponse(track: nil, diagnostic: "Bridge MediaRemote returned nil")
+        }
+
+        guard let title = stringValue(for: "kMRMediaRemoteNowPlayingInfoTitle", in: info),
+              !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let keys = info.keys.map { String(describing: $0) }.sorted().prefix(4).joined(separator: ", ")
+            return NowPlayingProbeResponse(track: nil, diagnostic: "Bridge info had no title. keys: \(keys)")
+        }
+
+        let artworkData = value(for: "kMRMediaRemoteNowPlayingInfoArtworkData", in: info) as? Data
+        let artist = stringValue(for: "kMRMediaRemoteNowPlayingInfoArtist", in: info) ?? "Unknown Artist"
+        let track = NowPlayingProbeTrack(
+            title: title,
+            artist: artist,
+            album: stringValue(for: "kMRMediaRemoteNowPlayingInfoAlbum", in: info) ?? "",
+            duration: doubleValue(for: "kMRMediaRemoteNowPlayingInfoDuration", in: info),
+            position: doubleValue(for: "kMRMediaRemoteNowPlayingInfoElapsedTime", in: info),
+            isPlaying: doubleValue(for: "kMRMediaRemoteNowPlayingInfoPlaybackRate", in: info) > 0,
+            timestampInterval: (value(for: "kMRMediaRemoteNowPlayingInfoTimestamp", in: info) as? Date)?
+                .timeIntervalSince1970,
+            artworkDataBase64: artworkData?.base64EncodedString()
+        )
+
+        let artworkBytes = artworkData?.count ?? 0
+        return NowPlayingProbeResponse(
+            track: track,
+            diagnostic: "Bridge read: \(title) / \(artist) / artwork \(artworkBytes)b"
+        )
+    }
+
+    private static func stringValue(for key: String, in info: [AnyHashable: Any]) -> String? {
+        value(for: key, in: info) as? String
+    }
+
+    private static func doubleValue(for key: String, in info: [AnyHashable: Any]) -> Double {
+        if let number = value(for: key, in: info) as? NSNumber {
+            return number.doubleValue
+        }
+        if let double = value(for: key, in: info) as? Double {
+            return double
+        }
+        return 0
+    }
+
+    private static func value(for key: String, in info: [AnyHashable: Any]) -> Any? {
+        info[key] ?? info[AnyHashable(key)]
+    }
+}
+
+private final class NowPlayingProbeBox {
+    var response: NowPlayingProbeResponse
+
+    init(response: NowPlayingProbeResponse) {
+        self.response = response
+    }
+}
+#else
+private enum NowPlayingProbe {
+    static func writeSnapshot() throws {
+        let response = NowPlayingProbeResponse(
+            track: nil,
+            diagnostic: "Bridge Now Playing is only available on macOS"
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(response)
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data("\n".utf8))
+    }
+}
+#endif
 
 private enum SocketClient {
     static func send(envelope: BridgeEnvelope, socketPath: String) throws -> BridgeResponse {

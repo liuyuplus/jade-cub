@@ -4,7 +4,8 @@ This file is a routing layer for coding agents working in this repo. Keep it sho
 
 ## Mission
 
-- `PingIsland` is a macOS menu bar app that surfaces Dynamic Island-style status for Claude Code, Codex, Gemini CLI, Hermes Agent, Qwen Code, and compatible hook-driven agent sessions.
+- `Jade Cub` is a macOS menu bar app that surfaces Dynamic Island-style status for Codex, Claude Code, Gemini CLI, Hermes Agent, Qwen Code, and compatible hook-driven agent sessions.
+- The historical Xcode target and primary source directory are still named `PingIsland`; treat that as an internal implementation name unless a task explicitly asks for a full target/module rename.
 - The main runtime path is:
   - hook or app-server events
   - monitoring and service layers
@@ -77,12 +78,12 @@ This file is a routing layer for coding agents working in this repo. Keep it sho
 - If you change provider/client detection or click-through behavior, trace through `HookSocketServer`, `SessionStore`, `SessionState`, `SessionLauncher`, and the session list / hover UI so labels and launch targets stay in sync.
 - If you add a Claude-compatible hook client, start in `PingIsland/Models/ClientProfile.swift` and wire any truly client-specific behavior from there before adding new ad-hoc switches elsewhere.
   - Gemini CLI hooks are managed through `~/.gemini/settings.json`; its `BeforeTool` / `AfterTool` matchers are regex-based, so use `.*` rather than Claude-style `*`.
-  - Hermes Agent CLI integration must use plugin hooks under `~/.hermes/plugins/ping_island/`; `~/.hermes/hooks/` is gateway-only and will not fire in the Hermes CLI, so keep Ping Island on `ctx.register_hook()`-based plugin registration instead of gateway hook directories.
+  - Hermes Agent CLI integration must use plugin hooks under the managed plugin directory; `~/.hermes/hooks/` is gateway-only and will not fire in the Hermes CLI, so keep Jade Cub on `ctx.register_hook()`-based plugin registration instead of gateway hook directories.
   - Qwen Code hooks are managed through `~/.qwen/settings.json`; follow the official Qwen Code hook event names (`PreToolUse`, `PostToolUseFailure`, `Notification`, `Stop`, etc.) and remember that `Notification` matcher values are exact notification types such as `permission_prompt`, `idle_prompt`, and `auth_success`.
   - OpenClaw hooks are managed as a generated internal hook directory under `~/.openclaw/hooks/<hook-name>/` and require the paired enablement entry in `~/.openclaw/openclaw.json`; treat it as a directory-discovery integration, not a JSON hook list.
   - Gemini `Notification` hooks are observability-only in the upstream protocol; do not treat them as actionable approval callbacks unless the bridge grows explicit Gemini response handling.
   - Qoder-family hook installs currently cover both `~/.qoder/settings.json` and `~/.qoderwork/settings.json`; keep their event lists and bridge arguments aligned unless the clients diverge on protocol.
-  - OpenCode is managed as a generated plugin file under `~/.config/opencode/plugins/ping-island.js`; treat it as a plugin-based integration, not a JSON hooks file.
+  - OpenCode is managed as a generated plugin file; treat it as a plugin-based integration, not a JSON hooks file.
   - `QoderWork` should not be added to `ideExtensionProfiles` unless it actually ships VS Code-compatible extension support in the future.
 - If you change how sessions are associated across relaunches or between hook/app-server ingress paths, inspect both `SessionStore` and `SessionAssociationStore` so cached client metadata stays compatible.
 - If you change the new native runtime rollout path, keep it isolated from the legacy hook/app-server flow. Reuse shared `SessionState`-driven views, but keep runtime orchestration, persistence, and feature gating under `PingIsland/Services/Runtime/` and `PingIsland/Core/FeatureFlags.swift`.

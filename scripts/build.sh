@@ -1,22 +1,22 @@
 #!/bin/bash
-# Build Ping Island for release
+# Build Jade Cub for release
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-BUILD_DIR="${PING_ISLAND_BUILD_DIR:-$PROJECT_DIR/build}"
+BUILD_DIR="${JADE_CUB_BUILD_DIR:-${PING_ISLAND_BUILD_DIR:-$PROJECT_DIR/build}}"
 DERIVED_DATA_PATH="$BUILD_DIR/DerivedData"
-ARCHIVE_PATH="$BUILD_DIR/PingIsland.xcarchive"
+ARCHIVE_PATH="$BUILD_DIR/JadeCub.xcarchive"
 EXPORT_PATH="$BUILD_DIR/export"
-KEYCHAIN_PATH="${PING_ISLAND_KEYCHAIN_PATH:-}"
-TEAM_ID="${PING_ISLAND_TEAM_ID:-}"
-EXPORT_METHOD="${PING_ISLAND_EXPORT_METHOD:-developer-id}"
-SIGNING_CERTIFICATE="${PING_ISLAND_SIGNING_CERTIFICATE:-Developer ID Application}"
-ENABLE_HARDENED_RUNTIME="${PING_ISLAND_ENABLE_HARDENED_RUNTIME:-YES}"
-SCHEME="${PING_ISLAND_SCHEME:-PingIsland}"
-PROJECT_FILE="${PING_ISLAND_PROJECT_FILE:-PingIsland.xcodeproj}"
+KEYCHAIN_PATH="${JADE_CUB_KEYCHAIN_PATH:-${PING_ISLAND_KEYCHAIN_PATH:-}}"
+TEAM_ID="${JADE_CUB_TEAM_ID:-${PING_ISLAND_TEAM_ID:-}}"
+EXPORT_METHOD="${JADE_CUB_EXPORT_METHOD:-${PING_ISLAND_EXPORT_METHOD:-developer-id}}"
+SIGNING_CERTIFICATE="${JADE_CUB_SIGNING_CERTIFICATE:-${PING_ISLAND_SIGNING_CERTIFICATE:-Developer ID Application}}"
+ENABLE_HARDENED_RUNTIME="${JADE_CUB_ENABLE_HARDENED_RUNTIME:-${PING_ISLAND_ENABLE_HARDENED_RUNTIME:-YES}}"
+SCHEME="${JADE_CUB_SCHEME:-${PING_ISLAND_SCHEME:-PingIsland}}"
+PROJECT_FILE="${JADE_CUB_PROJECT_FILE:-${PING_ISLAND_PROJECT_FILE:-PingIsland.xcodeproj}}"
 
-echo "=== Building Ping Island ==="
+echo "=== Building Jade Cub ==="
 echo ""
 
 # Clean previous builds
@@ -99,6 +99,6 @@ fi
 
 echo ""
 echo "=== Build Complete ==="
-echo "App exported to: $EXPORT_PATH/Ping Island.app"
+echo "App exported to: $EXPORT_PATH/Jade Cub.app"
 echo ""
 echo "Next: Run ./scripts/create-release.sh to notarize and create DMG"

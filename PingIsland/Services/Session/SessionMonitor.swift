@@ -877,7 +877,7 @@ class SessionMonitor: ObservableObject {
         case .claude:
             return event.status == "ended"
         case .codex:
-            return event.status == "ended" || event.event == "Stop"
+            return event.status == "ended"
         default:
             return false
         }

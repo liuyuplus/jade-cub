@@ -268,11 +268,13 @@ final class AppSettingsStore: ObservableObject {
         static let soundVolume = "soundVolume"
         static let temporarilyMuteNotificationsUntil = "temporarilyMuteNotificationsUntil"
         static let processingStartSound = "processingStartSound"
+        static let approvalRequiredSound = "approvalRequiredSound"
         static let attentionRequiredSound = "attentionRequiredSound"
         static let taskCompletedSound = "taskCompletedSound"
         static let taskErrorSound = "taskErrorSound"
         static let resourceLimitSound = "resourceLimitSound"
         static let processingStartSoundEnabled = "processingStartSoundEnabled"
+        static let approvalRequiredSoundEnabled = "approvalRequiredSoundEnabled"
         static let attentionRequiredSoundEnabled = "attentionRequiredSoundEnabled"
         static let taskCompletedSoundEnabled = "taskCompletedSoundEnabled"
         static let taskErrorSoundEnabled = "taskErrorSoundEnabled"
@@ -286,11 +288,18 @@ final class AppSettingsStore: ObservableObject {
         static let smartSuppression = "smartSuppression"
         static let autoOpenCompletionPanel = "autoOpenCompletionPanel"
         static let autoOpenCompactedNotificationPanel = "autoOpenCompactedNotificationPanel"
+        static let automaticNotificationPopupsDefaultOffMigrated = "automaticNotificationPopupsDefaultOffMigrated"
         static let showAgentDetail = "showAgentDetail"
         static let subagentVisibilityMode = "subagentVisibilityMode"
         static let legacyCodexSubagentVisibilityMode = "codexSubagentVisibilityMode"
+        static let subagentVisibilityDefaultHiddenMigrated = "subagentVisibilityDefaultHiddenMigrated"
         static let showUsage = "showUsage"
         static let usageValueMode = "usageValueMode"
+        static let obsidianDailyTasksEnabled = "obsidianDailyTasksEnabled"
+        static let obsidianVaultPath = "obsidianVaultPath"
+        static let obsidianDailyDirectoryPath = "obsidianDailyDirectoryPath"
+        static let obsidianDailyTemplatePath = "obsidianDailyTemplatePath"
+        static let obsidianDailyFilenamePattern = "obsidianDailyFilenamePattern"
         static let contentFontSize = "contentFontSize"
         static let maxPanelHeight = "maxPanelHeight"
         static let notchPetStyle = "notchPetStyle"
@@ -365,6 +374,13 @@ final class AppSettingsStore: ObservableObject {
         }
     }
 
+    @Published var approvalRequiredSound: NotificationSound {
+        didSet {
+            guard !isBootstrapping else { return }
+            defaults.set(approvalRequiredSound.rawValue, forKey: Keys.approvalRequiredSound)
+        }
+    }
+
     @Published var attentionRequiredSound: NotificationSound {
         didSet {
             guard !isBootstrapping else { return }
@@ -400,6 +416,13 @@ final class AppSettingsStore: ObservableObject {
         didSet {
             guard !isBootstrapping else { return }
             defaults.set(processingStartSoundEnabled, forKey: Keys.processingStartSoundEnabled)
+        }
+    }
+
+    @Published var approvalRequiredSoundEnabled: Bool {
+        didSet {
+            guard !isBootstrapping else { return }
+            defaults.set(approvalRequiredSoundEnabled, forKey: Keys.approvalRequiredSoundEnabled)
         }
     }
 
@@ -529,6 +552,41 @@ final class AppSettingsStore: ObservableObject {
         didSet {
             guard !isBootstrapping else { return }
             defaults.set(usageValueMode.rawValue, forKey: Keys.usageValueMode)
+        }
+    }
+
+    @Published var obsidianDailyTasksEnabled: Bool {
+        didSet {
+            guard !isBootstrapping else { return }
+            defaults.set(obsidianDailyTasksEnabled, forKey: Keys.obsidianDailyTasksEnabled)
+        }
+    }
+
+    @Published var obsidianVaultPath: String {
+        didSet {
+            guard !isBootstrapping else { return }
+            defaults.set(obsidianVaultPath, forKey: Keys.obsidianVaultPath)
+        }
+    }
+
+    @Published var obsidianDailyDirectoryPath: String {
+        didSet {
+            guard !isBootstrapping else { return }
+            defaults.set(obsidianDailyDirectoryPath, forKey: Keys.obsidianDailyDirectoryPath)
+        }
+    }
+
+    @Published var obsidianDailyTemplatePath: String {
+        didSet {
+            guard !isBootstrapping else { return }
+            defaults.set(obsidianDailyTemplatePath, forKey: Keys.obsidianDailyTemplatePath)
+        }
+    }
+
+    @Published var obsidianDailyFilenamePattern: String {
+        didSet {
+            guard !isBootstrapping else { return }
+            defaults.set(obsidianDailyFilenamePattern, forKey: Keys.obsidianDailyFilenamePattern)
         }
     }
 
@@ -779,6 +837,11 @@ final class AppSettingsStore: ObservableObject {
         exists ? defaults.double(forKey: key) : defaultValue
     }
 
+    private static func normalizedObsidianDailyFilenamePattern(_ rawValue: String?) -> String {
+        let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "yyyy-MM-dd" : trimmed
+    }
+
     private func containsPersistedValue(forKey key: String) -> Bool {
         defaults.dictionaryRepresentation()[key] != nil
     }
@@ -868,13 +931,14 @@ final class AppSettingsStore: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.subagentVisibilityModeStorage = .visible
+        self.subagentVisibilityModeStorage = .hidden
         let persistedKeys = Set(defaults.dictionaryRepresentation().keys)
         let appLanguageRaw = defaults.string(forKey: Keys.appLanguage)
         let legacyNotificationSound = NotificationSound(
             rawValue: defaults.string(forKey: Keys.notificationSound) ?? ""
         ) ?? .blow
         let usageValueModeRaw = defaults.string(forKey: Keys.usageValueMode)
+        let obsidianDailyFilenamePatternRaw = defaults.string(forKey: Keys.obsidianDailyFilenamePattern)
         let soundThemeModeRaw = defaults.string(forKey: Keys.soundThemeMode)
         let resolvedSoundThemeMode = SoundThemeMode(
             rawValue: soundThemeModeRaw ?? ""
@@ -926,6 +990,9 @@ final class AppSettingsStore: ObservableObject {
         _processingStartSound = Published(initialValue: NotificationSound(
             rawValue: defaults.string(forKey: Keys.processingStartSound) ?? ""
         ) ?? .tink)
+        _approvalRequiredSound = Published(initialValue: NotificationSound(
+            rawValue: defaults.string(forKey: Keys.approvalRequiredSound) ?? ""
+        ) ?? .sosumi)
         _attentionRequiredSound = Published(initialValue: NotificationSound(
             rawValue: defaults.string(forKey: Keys.attentionRequiredSound) ?? ""
         ) ?? .glass)
@@ -942,6 +1009,12 @@ final class AppSettingsStore: ObservableObject {
             from: defaults,
             key: Keys.processingStartSoundEnabled,
             exists: persistedKeys.contains(Keys.processingStartSoundEnabled),
+            default: true
+        ))
+        _approvalRequiredSoundEnabled = Published(initialValue: Self.boolValue(
+            from: defaults,
+            key: Keys.approvalRequiredSoundEnabled,
+            exists: persistedKeys.contains(Keys.approvalRequiredSoundEnabled),
             default: true
         ))
         _attentionRequiredSoundEnabled = Published(initialValue: Self.boolValue(
@@ -994,17 +1067,19 @@ final class AppSettingsStore: ObservableObject {
             exists: persistedKeys.contains(Keys.smartSuppression),
             default: true
         ))
-        _autoOpenCompletionPanel = Published(initialValue: Self.boolValue(
+        let shouldDisableAutomaticNotificationPopupsByDefault =
+            !persistedKeys.contains(Keys.automaticNotificationPopupsDefaultOffMigrated)
+        _autoOpenCompletionPanel = Published(initialValue: shouldDisableAutomaticNotificationPopupsByDefault ? false : Self.boolValue(
             from: defaults,
             key: Keys.autoOpenCompletionPanel,
             exists: persistedKeys.contains(Keys.autoOpenCompletionPanel),
-            default: true
+            default: false
         ))
-        _autoOpenCompactedNotificationPanel = Published(initialValue: Self.boolValue(
+        _autoOpenCompactedNotificationPanel = Published(initialValue: shouldDisableAutomaticNotificationPopupsByDefault ? false : Self.boolValue(
             from: defaults,
             key: Keys.autoOpenCompactedNotificationPanel,
             exists: persistedKeys.contains(Keys.autoOpenCompactedNotificationPanel),
-            default: true
+            default: false
         ))
         _showAgentDetail = Published(initialValue: Self.boolValue(
             from: defaults,
@@ -1012,12 +1087,22 @@ final class AppSettingsStore: ObservableObject {
             exists: persistedKeys.contains(Keys.showAgentDetail),
             default: true
         ))
-        subagentVisibilityModeStorage = SubagentVisibilityMode(
+        let parsedSubagentVisibilityMode = SubagentVisibilityMode(
             persistedValue: subagentVisibilityModeRaw ?? ""
-        ) ?? .visible
-        if defaults.string(forKey: Keys.subagentVisibilityMode) == nil {
+        )
+        let shouldMigrateSubagentDefaultToHidden =
+            !persistedKeys.contains(Keys.subagentVisibilityDefaultHiddenMigrated)
+            && subagentVisibilityModeRaw != "all"
+            && subagentVisibilityModeRaw != "firstLevelOnly"
+        subagentVisibilityModeStorage = shouldMigrateSubagentDefaultToHidden
+            ? .hidden
+            : (parsedSubagentVisibilityMode ?? .hidden)
+        if defaults.string(forKey: Keys.subagentVisibilityMode) == nil
+            || shouldMigrateSubagentDefaultToHidden {
             defaults.set(subagentVisibilityModeStorage.rawValue, forKey: Keys.subagentVisibilityMode)
         }
+        defaults.set(subagentVisibilityModeStorage.rawValue, forKey: Keys.legacyCodexSubagentVisibilityMode)
+        defaults.set(true, forKey: Keys.subagentVisibilityDefaultHiddenMigrated)
         _showUsage = Published(initialValue: Self.boolValue(
             from: defaults,
             key: Keys.showUsage,
@@ -1025,6 +1110,18 @@ final class AppSettingsStore: ObservableObject {
             default: false
         ))
         _usageValueMode = Published(initialValue: UsageValueMode(rawValue: usageValueModeRaw ?? "") ?? .remaining)
+        _obsidianDailyTasksEnabled = Published(initialValue: Self.boolValue(
+            from: defaults,
+            key: Keys.obsidianDailyTasksEnabled,
+            exists: persistedKeys.contains(Keys.obsidianDailyTasksEnabled),
+            default: false
+        ))
+        _obsidianVaultPath = Published(initialValue: defaults.string(forKey: Keys.obsidianVaultPath) ?? "")
+        _obsidianDailyDirectoryPath = Published(initialValue: defaults.string(forKey: Keys.obsidianDailyDirectoryPath) ?? "")
+        _obsidianDailyTemplatePath = Published(initialValue: defaults.string(forKey: Keys.obsidianDailyTemplatePath) ?? "")
+        _obsidianDailyFilenamePattern = Published(
+            initialValue: Self.normalizedObsidianDailyFilenamePattern(obsidianDailyFilenamePatternRaw)
+        )
         _contentFontSize = Published(initialValue: Self.doubleValue(
             from: defaults,
             key: Keys.contentFontSize,
@@ -1039,7 +1136,7 @@ final class AppSettingsStore: ObservableObject {
         ))
         _notchPetStyle = Published(initialValue: NotchPetStyle(rawValue: notchPetStyleRaw ?? "") ?? .cat)
         _notchDisplayMode = Published(initialValue: NotchDisplayMode(rawValue: notchDisplayModeRaw ?? "") ?? .compact)
-        _previewMascotKind = Published(initialValue: MascotKind(rawValue: previewMascotKindRaw ?? "") ?? .claude)
+        _previewMascotKind = Published(initialValue: MascotKind(rawValue: previewMascotKindRaw ?? "") ?? .codex)
         _surfaceMode = Published(initialValue: IslandSurfaceMode(rawValue: surfaceModeRaw ?? "") ?? .notch)
         _floatingPetAnchor = Published(initialValue: floatingPetAnchor)
         _presentationModeOnboardingPending = Published(initialValue: Self.boolValue(
@@ -1073,11 +1170,19 @@ final class AppSettingsStore: ObservableObject {
         if defaults.string(forKey: Keys.soundThemeMode) == nil {
             defaults.set(resolvedSoundThemeMode.rawValue, forKey: Keys.soundThemeMode)
         }
+        if defaults.string(forKey: Keys.obsidianDailyFilenamePattern) == nil {
+            defaults.set(obsidianDailyFilenamePattern, forKey: Keys.obsidianDailyFilenamePattern)
+        }
         if activeTemporaryMute == nil {
             defaults.removeObject(forKey: Keys.temporarilyMuteNotificationsUntil)
         }
         if !persistedKeys.contains(Keys.processingStartSoundEnabled) {
             defaults.set(true, forKey: Keys.processingStartSoundEnabled)
+        }
+        if shouldDisableAutomaticNotificationPopupsByDefault {
+            defaults.set(false, forKey: Keys.autoOpenCompletionPanel)
+            defaults.set(false, forKey: Keys.autoOpenCompactedNotificationPanel)
+            defaults.set(true, forKey: Keys.automaticNotificationPopupsDefaultOffMigrated)
         }
         applyIsland8BitStartSoundMigrationIfNeeded(for: resolvedSoundThemeMode)
 
@@ -1189,6 +1294,31 @@ enum AppSettings {
         set { shared.usageValueMode = newValue }
     }
 
+    static var obsidianDailyTasksEnabled: Bool {
+        get { shared.obsidianDailyTasksEnabled }
+        set { shared.obsidianDailyTasksEnabled = newValue }
+    }
+
+    static var obsidianVaultPath: String {
+        get { shared.obsidianVaultPath }
+        set { shared.obsidianVaultPath = newValue }
+    }
+
+    static var obsidianDailyDirectoryPath: String {
+        get { shared.obsidianDailyDirectoryPath }
+        set { shared.obsidianDailyDirectoryPath = newValue }
+    }
+
+    static var obsidianDailyTemplatePath: String {
+        get { shared.obsidianDailyTemplatePath }
+        set { shared.obsidianDailyTemplatePath = newValue }
+    }
+
+    static var obsidianDailyFilenamePattern: String {
+        get { shared.obsidianDailyFilenamePattern }
+        set { shared.obsidianDailyFilenamePattern = newValue }
+    }
+
     static var contentFontSize: Double {
         get { shared.contentFontSize }
         set { shared.contentFontSize = newValue }
@@ -1263,6 +1393,8 @@ enum AppSettings {
         switch event {
         case .processingStarted:
             return shared.processingStartSoundEnabled
+        case .approvalRequired:
+            return shared.approvalRequiredSoundEnabled
         case .attentionRequired:
             return shared.attentionRequiredSoundEnabled
         case .taskCompleted:
@@ -1278,6 +1410,8 @@ enum AppSettings {
         switch event {
         case .processingStarted:
             shared.processingStartSoundEnabled = enabled
+        case .approvalRequired:
+            shared.approvalRequiredSoundEnabled = enabled
         case .attentionRequired:
             shared.attentionRequiredSoundEnabled = enabled
         case .taskCompleted:
@@ -1293,6 +1427,8 @@ enum AppSettings {
         switch event {
         case .processingStarted:
             return shared.processingStartSound
+        case .approvalRequired:
+            return shared.approvalRequiredSound
         case .attentionRequired:
             return shared.attentionRequiredSound
         case .taskCompleted:
@@ -1308,6 +1444,8 @@ enum AppSettings {
         switch event {
         case .processingStarted:
             shared.processingStartSound = sound
+        case .approvalRequired:
+            shared.approvalRequiredSound = sound
         case .attentionRequired:
             shared.attentionRequiredSound = sound
         case .taskCompleted:
@@ -1328,16 +1466,19 @@ enum AppSettings {
 
     static func playClientStartupSound() {
         guard soundEnabled else { return }
+        guard !areReminderNotificationsSuppressed else { return }
         playBundledSound(named: Island8BitSound.clientStartup.rawValue)
     }
 
     static func playReleaseNotesSuccessSound() {
         guard soundEnabled else { return }
+        guard !areReminderNotificationsSuppressed else { return }
         playBundledSound(named: Island8BitSound.releaseNotesSuccess.rawValue)
     }
 
     static func playDetachedCapsuleSound() {
         guard soundEnabled else { return }
+        guard !areReminderNotificationsSuppressed else { return }
         playBundledSound(named: "bubbles_pop")
     }
 
@@ -1364,6 +1505,7 @@ enum AppSettings {
     }
 
     static func playNotificationSound(_ sound: NotificationSound? = nil) {
+        guard !areReminderNotificationsSuppressed else { return }
         playSound(named: (sound ?? notificationSound).soundName)
     }
 

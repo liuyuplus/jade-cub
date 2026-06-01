@@ -14,7 +14,7 @@ Use `PING_ISLAND_DEBUG_LOG_ONLY=1` or `--log-only` when you explicitly want capt
 Example `~/.codex/hooks.json` snippet for temporary debugging:
 
 ```bash
-REPO_ROOT="/absolute/path/to/ping-island"
+REPO_ROOT="/absolute/path/to/jade-cub"
 ```
 
 Replace `"$REPO_ROOT"` in the JSON snippet below with the real absolute repo path before saving it into `~/.codex/hooks.json`.
@@ -65,7 +65,7 @@ Inspect the latest records with:
 tail -n 20 ~/.ping-island-debug/codex-hooks/$(date +%Y%m%d).jsonl
 ```
 
-If you want to see only captured payloads without forwarding into Ping Island, run the same command with `--log-only`:
+If you want to see only captured payloads without forwarding into Jade Cub, run the same command with `--log-only`:
 
 ```json
 {

@@ -6,29 +6,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SCRIPT_DIR/lib/dmg-layout.sh"
 
-BUILD_DIR="${PING_ISLAND_BUILD_DIR:-$PROJECT_DIR/build/release}"
+BUILD_DIR="${JADE_CUB_BUILD_DIR:-${PING_ISLAND_BUILD_DIR:-$PROJECT_DIR/build/release}}"
 DERIVED_DATA_PATH="$BUILD_DIR/DerivedData"
 EXPORT_PATH="$BUILD_DIR/export"
-RELEASE_DIR="${PING_ISLAND_RELEASE_DIR:-$PROJECT_DIR/releases/signed}"
+RELEASE_DIR="${JADE_CUB_RELEASE_DIR:-${PING_ISLAND_RELEASE_DIR:-$PROJECT_DIR/releases/signed}}"
 NOTES_DIR="$PROJECT_DIR/releases/notes"
 KEYS_DIR="$PROJECT_DIR/.sparkle-keys"
 STAGING_DIR="$BUILD_DIR/dmg-staging"
-DMG_BACKGROUND_SOURCE="${PING_ISLAND_DMG_BACKGROUND_SOURCE:-$PROJECT_DIR/docs/images/ping-island-dmg-installer-background.png}"
-DMG_LOGO_SOURCE="${PING_ISLAND_DMG_LOGO_SOURCE:-$PROJECT_DIR/docs/images/ping-island-icon-transparent.svg}"
+DMG_BACKGROUND_SOURCE="${JADE_CUB_DMG_BACKGROUND_SOURCE:-${PING_ISLAND_DMG_BACKGROUND_SOURCE:-$PROJECT_DIR/docs/images/jade-cub-dmg-installer-background.png}}"
+DMG_LOGO_SOURCE="${JADE_CUB_DMG_LOGO_SOURCE:-${PING_ISLAND_DMG_LOGO_SOURCE:-$PROJECT_DIR/PingIsland/Assets.xcassets/AppIcon.appiconset/icon_1024x1024.png}}"
 
-APP_BUNDLE_NAME="Ping Island.app"
-APP_PRODUCT_NAME="PingIsland"
+APP_BUNDLE_NAME="Jade Cub.app"
+APP_PRODUCT_NAME="JadeCub"
 APP_PATH="$EXPORT_PATH/$APP_BUNDLE_NAME"
 
-NOTARY_APPLE_ID="${PING_ISLAND_NOTARY_APPLE_ID:-${APPLE_ID:-}}"
-NOTARY_TEAM_ID="${PING_ISLAND_NOTARY_TEAM_ID:-${APPLE_TEAM_ID:-}}"
-NOTARY_PASSWORD="${PING_ISLAND_NOTARY_PASSWORD:-${APPLE_APP_SPECIFIC_PASSWORD:-}}"
-NOTARY_KEYCHAIN_PROFILE="${PING_ISLAND_NOTARY_KEYCHAIN_PROFILE:-${NOTARY_KEYCHAIN_PROFILE:-PingIsland}}"
-SKIP_NOTARIZATION="${PING_ISLAND_SKIP_NOTARIZATION:-0}"
+NOTARY_APPLE_ID="${JADE_CUB_NOTARY_APPLE_ID:-${PING_ISLAND_NOTARY_APPLE_ID:-${APPLE_ID:-}}}"
+NOTARY_TEAM_ID="${JADE_CUB_NOTARY_TEAM_ID:-${PING_ISLAND_NOTARY_TEAM_ID:-${APPLE_TEAM_ID:-}}}"
+NOTARY_PASSWORD="${JADE_CUB_NOTARY_PASSWORD:-${PING_ISLAND_NOTARY_PASSWORD:-${APPLE_APP_SPECIFIC_PASSWORD:-}}}"
+NOTARY_KEYCHAIN_PROFILE="${JADE_CUB_NOTARY_KEYCHAIN_PROFILE:-${PING_ISLAND_NOTARY_KEYCHAIN_PROFILE:-${NOTARY_KEYCHAIN_PROFILE:-JadeCub}}}"
+SKIP_NOTARIZATION="${JADE_CUB_SKIP_NOTARIZATION:-${PING_ISLAND_SKIP_NOTARIZATION:-0}}"
 
-SPARKLE_PRIVATE_KEY_PATH="${PING_ISLAND_SPARKLE_PRIVATE_KEY_PATH:-$KEYS_DIR/eddsa_private_key}"
-GENERATE_APPCAST="${PING_ISLAND_GENERATE_APPCAST:-0}"
-VALIDATE_RELEASE_PROGRESS="${PING_ISLAND_VALIDATE_RELEASE_PROGRESS:-1}"
+SPARKLE_PRIVATE_KEY_PATH="${JADE_CUB_SPARKLE_PRIVATE_KEY_PATH:-${PING_ISLAND_SPARKLE_PRIVATE_KEY_PATH:-$KEYS_DIR/eddsa_private_key}}"
+GENERATE_APPCAST="${JADE_CUB_GENERATE_APPCAST:-${PING_ISLAND_GENERATE_APPCAST:-0}}"
+VALIDATE_RELEASE_PROGRESS="${JADE_CUB_VALIDATE_RELEASE_PROGRESS:-${PING_ISLAND_VALIDATE_RELEASE_PROGRESS:-1}}"
 
 notary_args=()
 
@@ -52,7 +52,7 @@ require_file() {
 }
 
 resolve_exported_app_icon() {
-    local requested_icon_source="${PING_ISLAND_DMG_ICON_SOURCE:-}"
+    local requested_icon_source="${JADE_CUB_DMG_ICON_SOURCE:-${PING_ISLAND_DMG_ICON_SOURCE:-}}"
     local bundled_icon_path="$APP_PATH/Contents/Resources/AppIcon.icns"
 
     if [ -n "$requested_icon_source" ]; then
@@ -78,6 +78,11 @@ resolve_dmg_icon_source() {
 }
 
 infer_github_repo() {
+    if [ -n "${JADE_CUB_GITHUB_REPO:-}" ]; then
+        echo "$JADE_CUB_GITHUB_REPO"
+        return 0
+    fi
+
     if [ -n "${PING_ISLAND_GITHUB_REPO:-}" ]; then
         echo "$PING_ISLAND_GITHUB_REPO"
         return 0
@@ -120,10 +125,10 @@ resolve_notary_credentials() {
 
     echo "ERROR: No usable notarization credentials were found."
     echo "Provide one of:"
-    echo "  1. PING_ISLAND_NOTARY_APPLE_ID / PING_ISLAND_NOTARY_TEAM_ID / PING_ISLAND_NOTARY_PASSWORD"
+    echo "  1. JADE_CUB_NOTARY_APPLE_ID / JADE_CUB_NOTARY_TEAM_ID / JADE_CUB_NOTARY_PASSWORD"
     echo "  2. A notarytool keychain profile named '$NOTARY_KEYCHAIN_PROFILE'"
     echo ""
-    echo "You can skip notarization explicitly with PING_ISLAND_SKIP_NOTARIZATION=1."
+    echo "You can skip notarization explicitly with JADE_CUB_SKIP_NOTARIZATION=1."
     exit 1
 }
 
@@ -175,6 +180,7 @@ find_sparkle_bin_dir() {
     local candidates=(
         "$DERIVED_DATA_PATH/SourcePackages/artifacts/sparkle/Sparkle/bin"
         "$HOME/Library/Developer/Xcode/DerivedData/PingIsland-*/SourcePackages/artifacts/sparkle/Sparkle/bin"
+        "$HOME/Library/Developer/Xcode/DerivedData/JadeCub-*/SourcePackages/artifacts/sparkle/Sparkle/bin"
         "$PROJECT_DIR/.build/artifacts/sparkle/Sparkle/bin"
     )
 
@@ -281,7 +287,7 @@ for release in releases:
         (
             asset.get("browser_download_url", "")
             for asset in release.get("assets", [])
-            if asset.get("name", "").startswith("PingIsland-")
+            if asset.get("name", "").startswith("JadeCub-")
             and asset.get("name", "").endswith(".zip")
         ),
         "",
@@ -310,7 +316,7 @@ PY
     previous_plist="$tmp_dir/previous-Info.plist"
 
     curl -fsSL "$previous_zip_url" -o "$tmp_dir/previous.zip"
-    unzip -p "$tmp_dir/previous.zip" "Ping Island.app/Contents/Info.plist" > "$previous_plist"
+    unzip -p "$tmp_dir/previous.zip" "Jade Cub.app/Contents/Info.plist" > "$previous_plist"
 
     previous_version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$previous_plist" 2>/dev/null || true)
     previous_build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$previous_plist" 2>/dev/null || true)
@@ -362,11 +368,14 @@ require_file "$DMG_BACKGROUND_SOURCE"
 
 resolve_notary_credentials
 
-echo "=== Packaging Signed Ping Island ==="
+echo "=== Packaging Signed Jade Cub ==="
 echo ""
 
+export JADE_CUB_BUILD_DIR="$BUILD_DIR"
 export PING_ISLAND_BUILD_DIR="$BUILD_DIR"
+export JADE_CUB_DMG_FAIL_ON_PLAIN=1
 export PING_ISLAND_DMG_FAIL_ON_PLAIN=1
+export JADE_CUB_DMG_BACKGROUND_SOURCE="$DMG_BACKGROUND_SOURCE"
 export PING_ISLAND_DMG_BACKGROUND_SOURCE="$DMG_BACKGROUND_SOURCE"
 "$SCRIPT_DIR/build.sh"
 
@@ -377,6 +386,7 @@ fi
 
 DMG_ICON_SOURCE="$(resolve_dmg_icon_source)"
 require_file "$DMG_ICON_SOURCE"
+export JADE_CUB_DMG_ICON_SOURCE="$DMG_ICON_SOURCE"
 export PING_ISLAND_DMG_ICON_SOURCE="$DMG_ICON_SOURCE"
 
 log_section "Verifying App Signature"
@@ -412,7 +422,7 @@ log_section "Creating ZIP"
 ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
 
 log_section "Creating DMG"
-create_styled_dmg "$APP_PATH" "$DMG_PATH" "Ping Island" "$STAGING_DIR" "$PROJECT_DIR"
+create_styled_dmg "$APP_PATH" "$DMG_PATH" "Jade Cub" "$STAGING_DIR" "$PROJECT_DIR"
 
 notarize_and_staple "$DMG_PATH" "$DMG_PATH"
 if [ "$SKIP_NOTARIZATION" != "1" ]; then

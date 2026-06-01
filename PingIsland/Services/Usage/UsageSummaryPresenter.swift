@@ -154,9 +154,9 @@ enum UsageSummaryPresenter {
         }
 
         switch route {
-        case .sessionList, .hoverDashboard, .chat:
+        case .sessionList, .shelf, .hoverDashboard, .chat:
             return true
-        case .attentionNotification, .completionNotification:
+        case .music, .attentionNotification, .completionNotification:
             return false
         }
     }

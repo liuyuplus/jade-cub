@@ -108,13 +108,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startupSessionMonitor.stopMonitoring()
     }
     private func ensureSingleInstance() -> Bool {
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.wudanwu.PingIsland"
+        let bundleID = Bundle.main.bundleIdentifier ?? "io.github.liuyuplus.JadeCub"
         let runningApps = NSWorkspace.shared.runningApplications.filter {
             $0.bundleIdentifier == bundleID
         }
 
         if runningApps.count > 1 {
-            if let existingApp = runningApps.first(where: { $0.processIdentifier != getpid() }) {
+            let existingApps = runningApps.filter { $0.processIdentifier != getpid() }
+            if launchConfiguration.isDebuggerAttached {
+                existingApps.forEach { $0.terminate() }
+                return true
+            }
+
+            if let existingApp = existingApps.first {
                 existingApp.activate()
             }
             return false

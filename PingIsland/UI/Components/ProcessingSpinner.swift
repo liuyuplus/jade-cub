@@ -2,31 +2,64 @@
 //  ProcessingSpinner.swift
 //  PingIsland
 //
-//  Animated symbol spinner for processing state
+//  Animated dots indicator for processing state
 //
 
-import Combine
 import SwiftUI
+
+struct ThinkingDotsIndicator: View {
+    let color: Color
+    let dotSize: CGFloat
+    let spacing: CGFloat
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(color: Color = .white, dotSize: CGFloat = 3.4, spacing: CGFloat = 2.6) {
+        self.color = color
+        self.dotSize = dotSize
+        self.spacing = spacing
+    }
+
+    var body: some View {
+        if reduceMotion {
+            dots(at: nil)
+        } else {
+            TimelineView(.periodic(from: .now, by: 0.12)) { context in
+                dots(at: context.date)
+            }
+        }
+    }
+
+    private func dots(at date: Date?) -> some View {
+        HStack(spacing: spacing) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(color.opacity(opacity(at: date, index: index)))
+                    .frame(width: dotSize, height: dotSize)
+            }
+        }
+        .frame(width: dotSize * 3 + spacing * 2, height: dotSize)
+    }
+
+    private func opacity(at date: Date?, index: Int) -> Double {
+        guard let date, !reduceMotion else {
+            return index == 1 ? 1.0 : 0.74
+        }
+
+        let wave = sin(date.timeIntervalSinceReferenceDate * 4.8 - Double(index) * 0.8)
+        return 0.58 + ((wave + 1) / 2) * 0.42
+    }
+}
 
 struct ProcessingSpinner: View {
     let color: Color
-    @State private var phase: Int = 0
 
-    private let symbols = ["·", "✢", "✳", "∗", "✻", "✽"]
-    private let timer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
-
-    init(color: Color = Color(red: 0.85, green: 0.47, blue: 0.34)) {
+    init(color: Color = .white) {
         self.color = color
     }
 
     var body: some View {
-        Text(symbols[phase % symbols.count])
-            .font(.system(size: 12, weight: .bold))
-            .foregroundColor(color)
-            .frame(width: 12, alignment: .center)
-            .onReceive(timer) { _ in
-                phase = (phase + 1) % symbols.count
-            }
+        ThinkingDotsIndicator(color: color, dotSize: 3.2, spacing: 2.4)
     }
 }
 

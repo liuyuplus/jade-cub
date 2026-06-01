@@ -2,6 +2,150 @@ import XCTest
 @testable import Ping_Island
 
 final class SessionStoreCodexInterventionTests: XCTestCase {
+    func testCodexAppServerFiltersInternalEnvironmentContextThread() {
+        let threadId = "8e4ece59-2fb3-4cff-b9f4-84bfb36a4e7f"
+        let thread: [String: Any] = [
+            "id": threadId,
+            "name": "<environment_context>",
+            "preview": "# Instructions (read first)\n# OD core directives (read first)",
+            "cwd": "/Users/test/Library/Application Support/Codex/session-\(threadId)",
+            "status": [
+                "type": "active"
+            ]
+        ]
+
+        XCTAssertTrue(CodexAppServerMonitor.shouldFilterInternalContextThreadForUI(thread))
+    }
+
+    func testCodexAppServerDoesNotFilterInternalContextThreadWhenApprovalIsWaiting() {
+        let threadId = "8e4ece59-2fb3-4cff-b9f4-84bfb36a4e7f"
+        let thread: [String: Any] = [
+            "id": threadId,
+            "name": "<environment_context>",
+            "preview": "# Instructions (read first)\n# OD core directives (read first)",
+            "cwd": "/Users/test/Library/Application Support/Codex/session-\(threadId)",
+            "status": [
+                "type": "active",
+                "activeFlags": ["waitingOnApproval"]
+            ]
+        ]
+
+        XCTAssertFalse(CodexAppServerMonitor.shouldFilterInternalContextThreadForUI(thread))
+    }
+
+    func testCodexAppServerDoesNotFilterInternalContextThreadWithTopLevelWaitingApprovalLabel() {
+        let threadId = "8e4ece59-2fb3-4cff-b9f4-84bfb36a4e7f"
+        let thread: [String: Any] = [
+            "id": threadId,
+            "name": "<environment_context>",
+            "preview": "# Instructions (read first)\n# OD core directives (read first)",
+            "cwd": "/Users/test/Library/Application Support/Codex/session-\(threadId)",
+            "label": "等待审批",
+            "status": [
+                "type": "active"
+            ]
+        ]
+
+        XCTAssertFalse(CodexAppServerMonitor.shouldFilterInternalContextThreadForUI(thread))
+    }
+
+    func testCodexAppServerDoesNotFilterInternalContextThreadWithApprovalStatusString() {
+        let threadId = "8e4ece59-2fb3-4cff-b9f4-84bfb36a4e7f"
+        let thread: [String: Any] = [
+            "id": threadId,
+            "name": "<environment_context>",
+            "preview": "# Instructions (read first)\n# OD core directives (read first)",
+            "cwd": "/Users/test/Library/Application Support/Codex/session-\(threadId)",
+            "status": "waiting_on_approval"
+        ]
+
+        XCTAssertFalse(CodexAppServerMonitor.shouldFilterInternalContextThreadForUI(thread))
+    }
+
+    func testCodexAppServerDoesNotFilterNormalProjectThread() {
+        let thread: [String: Any] = [
+            "id": "019dc0b1-1b2c-73d8-9d3d-9833ecfc7fb4",
+            "name": "大屏设计 tab1",
+            "preview": "默认视角能看到底部三项已经换成成本结构指标了",
+            "cwd": "/Users/test/Documents/New project 7",
+            "path": "/Users/test/.codex/sessions/rollout-019dc0b1-1b2c-73d8-9d3d-9833ecfc7fb4.jsonl",
+            "status": [
+                "type": "active"
+            ]
+        ]
+
+        XCTAssertFalse(CodexAppServerMonitor.shouldFilterInternalContextThreadForUI(thread))
+    }
+
+    func testCodexStatusRecognizesChineseWaitingApprovalLabel() {
+        let status: [String: Any] = [
+            "type": "active",
+            "label": "等待审批"
+        ]
+
+        XCTAssertTrue(CodexAppServerMonitor.statusIndicatesWaitingOnApproval(status))
+    }
+
+    func testCodexStatusRecognizesNestedApprovalRequiredState() {
+        let status: [String: Any] = [
+            "type": "in_progress",
+            "state": [
+                "kind": "approval_required",
+                "message": "Approval required before running command"
+            ]
+        ]
+
+        XCTAssertTrue(CodexAppServerMonitor.statusIndicatesWaitingOnApproval(status))
+    }
+
+    func testCodexFailureMetadataMarksSessionFailure() async {
+        let sessionId = "codex-system-error-\(UUID().uuidString)"
+        let store = SessionStore.shared
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: nil,
+            preview: nil,
+            cwd: "/tmp/project",
+            phase: .idle,
+            intervention: nil,
+            clientInfo: SessionClientInfo(kind: .codexApp, profileID: "codex-app", name: "Codex App"),
+            metadata: [
+                "failureEventID": "codex-status-systemerror-offline",
+                "failureReason": "The Internet connection appears to be offline."
+            ]
+        )
+
+        let session = await store.session(for: sessionId)
+        XCTAssertEqual(session?.sessionFailureEventIDs, Set(["codex-status-systemerror-offline"]))
+        XCTAssertEqual(session?.previewText, "The Internet connection appears to be offline.")
+
+        await store.process(.sessionArchived(sessionId: sessionId))
+    }
+
+    func testRuntimeCrashMarksSessionFailureBeforeEnding() async {
+        let sessionId = "codex-runtime-crash-\(UUID().uuidString)"
+        let store = SessionStore.shared
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: nil,
+            preview: nil,
+            cwd: "/tmp/project",
+            phase: .processing,
+            intervention: nil,
+            clientInfo: SessionClientInfo(kind: .codexCLI, profileID: "codex-cli", name: "Codex")
+        )
+
+        await store.process(.runtimeSessionStopped(sessionId: sessionId, reason: .crashed))
+
+        let session = await store.session(for: sessionId)
+        XCTAssertEqual(session?.phase, .ended)
+        XCTAssertEqual(session?.sessionFailureEventIDs, Set(["runtime-crashed"]))
+
+        await store.process(.sessionArchived(sessionId: sessionId))
+    }
+
     func testCodexAppServerIdleRefreshDoesNotClearExternalOnlyIntervention() async {
         let sessionId = "codex-external-\(UUID().uuidString)"
         let store = SessionStore.shared
@@ -45,6 +189,70 @@ final class SessionStoreCodexInterventionTests: XCTestCase {
         let session = await store.session(for: sessionId)
         XCTAssertEqual(session?.intervention?.title, "MCP Tool Approval Needed")
         XCTAssertEqual(session?.phase, .waitingForInput)
+
+        await store.process(.sessionArchived(sessionId: sessionId))
+    }
+
+    func testCodexAppServerIdleRefreshDoesNotClearCodexAppMCPApproval() async {
+        let sessionId = "codex-app-mcp-approval-\(UUID().uuidString)"
+        let store = SessionStore.shared
+
+        let intervention = SessionIntervention(
+            id: "mcp-pending-computer_use-get_app_state",
+            kind: .approval,
+            title: "MCP Tool Approval Needed",
+            message: "Allow the computer_use MCP server to run tool \"get_app_state\"?",
+            options: [],
+            questions: [],
+            supportsSessionScope: false,
+            metadata: [
+                "responseMode": "external_only",
+                "source": "codex_app_pending_mcp",
+                "server": "computer_use",
+                "toolName": "get_app_state",
+                "toolUseId": "call_computer_use_approval"
+            ]
+        )
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: nil,
+            preview: intervention.message,
+            cwd: "/tmp/project",
+            phase: .waitingForApproval(PermissionContext(
+                toolUseId: "call_computer_use_approval",
+                toolName: "get_app_state",
+                toolInput: nil,
+                receivedAt: Date()
+            )),
+            intervention: intervention,
+            clientInfo: SessionClientInfo(
+                kind: .codexApp,
+                profileID: "codex-app",
+                name: "Codex App",
+                bundleIdentifier: "com.openai.codex"
+            )
+        )
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: nil,
+            preview: "checking Ping Island",
+            cwd: "/tmp/project",
+            phase: .idle,
+            intervention: nil,
+            clientInfo: SessionClientInfo(
+                kind: .codexApp,
+                profileID: "codex-app",
+                name: "Codex App",
+                bundleIdentifier: "com.openai.codex"
+            )
+        )
+
+        let session = await store.session(for: sessionId)
+        XCTAssertEqual(session?.intervention?.kind, .approval)
+        XCTAssertEqual(session?.intervention?.metadata["source"], "codex_app_pending_mcp")
+        XCTAssertEqual(session?.phase.isWaitingForApproval, true)
 
         await store.process(.sessionArchived(sessionId: sessionId))
     }
@@ -135,6 +343,309 @@ final class SessionStoreCodexInterventionTests: XCTestCase {
         XCTAssertEqual(session?.intervention?.id, "jsonrpc-request-1")
         XCTAssertEqual(session?.intervention?.metadata["itemId"], "item-1")
         XCTAssertEqual(session?.phase, .waitingForInput)
+
+        await store.process(.sessionArchived(sessionId: sessionId))
+    }
+
+    func testCodexAppServerApprovalSurvivesProcessingRefresh() async {
+        let sessionId = "codex-app-server-command-approval-\(UUID().uuidString)"
+        let store = SessionStore.shared
+        let now = Date()
+        let intervention = SessionIntervention(
+            id: "jsonrpc-approval-1",
+            kind: .approval,
+            title: "Approve Command",
+            message: "Allow Codex to copy the rendered PNG into the target folder?",
+            options: [],
+            questions: [],
+            supportsSessionScope: true,
+            metadata: [
+                "source": "codex_app_server_request_approval",
+                "toolName": "exec_command"
+            ]
+        )
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: "Codex",
+            preview: intervention.message,
+            cwd: "/tmp/project",
+            phase: .waitingForApproval(PermissionContext(
+                toolUseId: "call_cp_approval",
+                toolName: "exec_command",
+                toolInput: nil,
+                receivedAt: now
+            )),
+            intervention: intervention,
+            clientInfo: SessionClientInfo.codexApp(threadId: sessionId),
+            activityAt: now
+        )
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: "Codex",
+            preview: "Running command",
+            cwd: "/tmp/project",
+            phase: .processing,
+            intervention: nil,
+            clientInfo: SessionClientInfo.codexApp(threadId: sessionId),
+            activityAt: now.addingTimeInterval(1)
+        )
+
+        let session = await store.session(for: sessionId)
+        XCTAssertEqual(session?.intervention?.id, "jsonrpc-approval-1")
+        XCTAssertEqual(session?.intervention?.kind, .approval)
+        XCTAssertEqual(session?.phase.approvalToolName, "exec_command")
+
+        await store.process(.sessionArchived(sessionId: sessionId))
+    }
+
+    func testCodexAppServerStatusApprovalSurvivesRolloutProcessingRefresh() async {
+        let sessionId = "codex-app-server-status-approval-\(UUID().uuidString)"
+        let store = SessionStore.shared
+        let now = Date()
+        let intervention = SessionIntervention(
+            id: "codex-status-approval-\(sessionId)",
+            kind: .approval,
+            title: "Codex Requests Approval",
+            message: "Codex Desktop is waiting for approval.",
+            options: [],
+            questions: [],
+            supportsSessionScope: false,
+            metadata: [
+                "source": "codex_app_server_status_waiting_approval",
+                "responseMode": "external_only"
+            ]
+        )
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: "Codex",
+            preview: intervention.message,
+            cwd: "/tmp/project",
+            phase: .waitingForApproval(PermissionContext(
+                toolUseId: intervention.id,
+                toolName: intervention.title,
+                toolInput: nil,
+                receivedAt: now
+            )),
+            intervention: intervention,
+            clientInfo: SessionClientInfo.codexApp(threadId: sessionId),
+            activityAt: now
+        )
+
+        let snapshot = CodexThreadSnapshot(
+            threadId: sessionId,
+            name: "Codex",
+            preview: "Running command",
+            cwd: "/tmp/project",
+            clientInfo: SessionClientInfo.codexApp(threadId: sessionId),
+            intervention: nil,
+            createdAt: now,
+            updatedAt: now.addingTimeInterval(1),
+            phase: .processing,
+            historyItems: [],
+            conversationInfo: ConversationInfo(
+                summary: "Codex",
+                lastMessage: nil,
+                lastMessageRole: nil,
+                lastToolName: nil,
+                firstUserMessage: nil,
+                lastUserMessageDate: nil
+            ),
+            latestTurnId: nil,
+            latestResponseText: nil,
+            latestResponsePhase: nil,
+            latestUserText: nil
+        )
+
+        await store.syncCodexThreadSnapshot(snapshot, ingress: .hookBridge)
+
+        let session = await store.session(for: sessionId)
+        XCTAssertEqual(session?.intervention?.id, intervention.id)
+        XCTAssertEqual(session?.phase.approvalToolName, intervention.title)
+
+        await store.process(.sessionArchived(sessionId: sessionId))
+    }
+
+    func testCodexTurnAbortSnapshotClearsProcessingRunningToolState() async throws {
+        let sessionId = "codex-turn-abort-\(UUID().uuidString)"
+        let store = SessionStore.shared
+        let now = Date()
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: "open_Design",
+            preview: "Running command",
+            cwd: "/tmp/open_Design",
+            phase: .processing,
+            intervention: nil,
+            clientInfo: SessionClientInfo.codexApp(threadId: sessionId),
+            activityAt: now
+        )
+
+        await store.syncCodexThreadSnapshot(
+            CodexThreadSnapshot(
+                threadId: sessionId,
+                name: "open_Design",
+                preview: "<turn_aborted> The user interrupted the request.",
+                cwd: "/tmp/open_Design",
+                clientInfo: SessionClientInfo.codexApp(threadId: sessionId),
+                intervention: nil,
+                createdAt: now,
+                updatedAt: now.addingTimeInterval(1),
+                phase: .idle,
+                historyItems: [
+                    ChatHistoryItem(
+                        id: "call_tail_log",
+                        type: .toolCall(ToolCallItem(
+                            name: "exec_command",
+                            input: ["cmd": "tail -200 app.log"],
+                            status: .interrupted,
+                            result: nil,
+                            structuredResult: nil,
+                            subagentTools: []
+                        )),
+                        timestamp: now
+                    ),
+                    ChatHistoryItem(
+                        id: "abort-user-message",
+                        type: .user("<turn_aborted> The user interrupted the request."),
+                        timestamp: now.addingTimeInterval(1)
+                    )
+                ],
+                conversationInfo: ConversationInfo(
+                    summary: "open_Design",
+                    lastMessage: "<turn_aborted> The user interrupted the request.",
+                    lastMessageRole: "user",
+                    lastToolName: nil,
+                    firstUserMessage: "tail the app log",
+                    lastUserMessageDate: now.addingTimeInterval(1)
+                ),
+                latestTurnId: nil,
+                latestResponseText: nil,
+                latestResponsePhase: nil,
+                latestUserText: "<turn_aborted> The user interrupted the request."
+            ),
+            ingress: .hookBridge
+        )
+
+        let session = await store.session(for: sessionId)
+        XCTAssertEqual(session?.phase, .idle)
+
+        let tool = try XCTUnwrap(session?.chatItems.compactMap { item -> ToolCallItem? in
+            guard case .toolCall(let tool) = item.type else { return nil }
+            return tool.name == "exec_command" ? tool : nil
+        }.first)
+        XCTAssertEqual(tool.status, .interrupted)
+
+        await store.process(.sessionArchived(sessionId: sessionId))
+    }
+
+    func testCodexTurnAbortSnapshotClearsProcessingEvenWhenSnapshotTimestampIsStale() async throws {
+        let sessionId = "codex-turn-abort-stale-\(UUID().uuidString)"
+        let store = SessionStore.shared
+        let now = Date()
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: "open_Design",
+            preview: "Running command",
+            cwd: "/tmp/open_Design",
+            phase: .processing,
+            intervention: nil,
+            clientInfo: SessionClientInfo.codexApp(threadId: sessionId),
+            activityAt: now
+        )
+
+        await store.syncCodexThreadSnapshot(
+            CodexThreadSnapshot(
+                threadId: sessionId,
+                name: "open_Design",
+                preview: "<turn_aborted> The user interrupted the request.",
+                cwd: "/tmp/open_Design",
+                clientInfo: SessionClientInfo.codexApp(threadId: sessionId),
+                intervention: nil,
+                createdAt: now.addingTimeInterval(-10),
+                updatedAt: now.addingTimeInterval(-5),
+                phase: .idle,
+                historyItems: [
+                    ChatHistoryItem(
+                        id: "call_tail_log",
+                        type: .toolCall(ToolCallItem(
+                            name: "exec_command",
+                            input: ["cmd": "tail -200 app.log"],
+                            status: .running,
+                            result: nil,
+                            structuredResult: nil,
+                            subagentTools: []
+                        )),
+                        timestamp: now.addingTimeInterval(-6)
+                    ),
+                    ChatHistoryItem(
+                        id: "abort-user-message",
+                        type: .user("<turn_aborted> The user interrupted the request."),
+                        timestamp: now.addingTimeInterval(-5)
+                    )
+                ],
+                conversationInfo: ConversationInfo(
+                    summary: "open_Design",
+                    lastMessage: "<turn_aborted> The user interrupted the request.",
+                    lastMessageRole: "user",
+                    lastToolName: nil,
+                    firstUserMessage: "tail the app log",
+                    lastUserMessageDate: now.addingTimeInterval(-5)
+                ),
+                latestTurnId: nil,
+                latestResponseText: nil,
+                latestResponsePhase: nil,
+                latestUserText: "<turn_aborted> The user interrupted the request."
+            ),
+            ingress: .hookBridge
+        )
+
+        let session = await store.session(for: sessionId)
+        XCTAssertEqual(session?.phase, .idle)
+
+        let tool = try XCTUnwrap(session?.chatItems.compactMap { item -> ToolCallItem? in
+            guard case .toolCall(let tool) = item.type else { return nil }
+            return tool.name == "exec_command" ? tool : nil
+        }.first)
+        XCTAssertEqual(tool.status, .interrupted)
+
+        await store.process(.sessionArchived(sessionId: sessionId))
+    }
+
+    func testCodexAppServerTurnAbortPreviewClearsProcessingState() async {
+        let sessionId = "codex-app-server-turn-abort-\(UUID().uuidString)"
+        let store = SessionStore.shared
+        let now = Date()
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: "open_Design",
+            preview: "Running command",
+            cwd: "/tmp/open_Design",
+            phase: .processing,
+            intervention: nil,
+            clientInfo: SessionClientInfo.codexApp(threadId: sessionId),
+            activityAt: now
+        )
+
+        await store.upsertCodexSession(
+            sessionId: sessionId,
+            name: "open_Design",
+            preview: "<turn_aborted> The user interrupted the request.",
+            cwd: "/tmp/open_Design",
+            phase: .processing,
+            intervention: nil,
+            clientInfo: SessionClientInfo.codexApp(threadId: sessionId),
+            activityAt: now.addingTimeInterval(1)
+        )
+
+        let session = await store.session(for: sessionId)
+        XCTAssertEqual(session?.phase, .idle)
+        XCTAssertEqual(session?.previewText, "<turn_aborted> The user interrupted the request.")
 
         await store.process(.sessionArchived(sessionId: sessionId))
     }

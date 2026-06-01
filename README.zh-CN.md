@@ -1,236 +1,148 @@
 <h1 align="center">
-  <img src="docs/images/ping-island-icon.svg" width="64" height="64" alt="Ping Island 应用图标" valign="middle">&nbsp;
-  Ping Island
+  <img src="PingIsland/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" width="64" height="64" alt="Jade Cub 应用图标" valign="middle">&nbsp;
+  Jade Cub
 </h1>
 <p align="center">
-  <b>macOS 菜单栏里的灵动岛风格 AI 编码会话监视器</b><br>
-  <a href="https://erha19.github.io/">官网</a> •
-  <a href="#installation">安装</a> •
-  <a href="#features">功能</a> •
-  <a href="#buddy-detach">Buddy 离岛</a> •
-  <a href="#supported-tools">支持的工具</a> •
-  <a href="#build-from-source">构建</a><br>
+  <b>Codex 优先的 macOS 灵动岛式 AI 编码会话监视器</b><br>
+  <a href="https://liuyuplus.github.io/jade-cub/">官网</a> •
+  <a href="#安装">安装</a> •
+  <a href="#功能特性">功能</a> •
+  <a href="#buddy-离岛">Buddy 离岛</a> •
+  <a href="PRIVACY.md">隐私</a> •
+  <a href="#从源码构建">构建</a><br>
   <a href="README.md">English</a> | 简体中文
 </p>
 
 <p align="center">
-  <a href="https://github.com/erha19/ping-island/releases">
-    <img src="https://img.shields.io/github/v/release/erha19/ping-island?display_name=tag&style=flat-square" alt="最新版本">
+  <a href="https://github.com/liuyuplus/jade-cub/releases">
+    <img src="https://img.shields.io/github/v/release/liuyuplus/jade-cub?display_name=tag&style=flat-square" alt="最新版本">
   </a>
-  <a href="https://github.com/erha19/ping-island/releases">
-    <img src="https://img.shields.io/github/downloads/erha19/ping-island/total?style=flat-square" alt="Release 下载次数">
+  <a href="https://github.com/liuyuplus/jade-cub/releases">
+    <img src="https://img.shields.io/github/downloads/liuyuplus/jade-cub/total?style=flat-square" alt="Release 下载次数">
   </a>
   <img src="https://img.shields.io/badge/macOS-14%2B-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="macOS 14 或更高">
   <img src="https://img.shields.io/badge/Swift-6.1-FA7343?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.1">
-  <img src="https://img.shields.io/badge/Clients-11%2B-111827?style=flat-square" alt="支持 11 个以上客户端">
   <img src="https://img.shields.io/badge/License-Apache%202.0-4F46E5?style=flat-square" alt="Apache 2.0 许可证">
 </p>
 
 <p align="center">
-  <img src="docs/images/notch-panel.png" width="960" alt="Ping Island 预览图">
-</p>
-<p align="center">
-  <sub>在菜单栏里查看活跃编码会话、回答追问，并一键跳回正确的终端或 IDE 窗口。</sub>
+  <img src="docs/images/notch-panel.png" width="480" alt="Jade Cub 预览图">
 </p>
 
 <p align="center">
-  <sub>官网：<a href="https://erha19.github.io/ping-island/">erha19.github.io/ping-island</a></sub>
+  <sub>在菜单栏/刘海区域查看 Codex 和其他编码 Agent 的状态、回答追问，并一键跳回对应终端或 IDE。</sub>
 </p>
 
 <p align="center">
-  <img src="docs/images/mascots/claude.gif" width="36" alt="Claude Code gif" title="Claude Code">&nbsp;
-  <img src="docs/images/mascots/codex.gif" width="36" alt="Codex gif" title="Codex">&nbsp;
-  <img src="docs/images/mascots/gemini.gif" width="36" alt="Gemini CLI gif" title="Gemini CLI">&nbsp;
-  <img src="docs/images/mascots/hermes.gif" width="36" alt="Hermes Agent gif" title="Hermes Agent">&nbsp;
-  <img src="docs/images/mascots/qwen.gif" width="36" alt="Qwen Code gif" title="Qwen Code">&nbsp;
-  <img src="docs/images/mascots/openclaw.gif" width="36" alt="OpenClaw gif" title="OpenClaw">&nbsp;
-  <img src="docs/images/mascots/opencode.gif" width="36" alt="OpenCode gif" title="OpenCode">&nbsp;
-  <img src="docs/images/mascots/cursor.gif" width="36" alt="Cursor gif" title="Cursor">&nbsp;
-  <img src="docs/images/mascots/qoder.gif" width="36" alt="Qoder gif" title="Qoder">&nbsp;
-  <img src="docs/images/mascots/codebuddy.gif" width="36" alt="CodeBuddy gif" title="CodeBuddy">&nbsp;
-  <img src="docs/images/mascots/copilot.gif" width="36" alt="GitHub Copilot gif" title="GitHub Copilot">
-</p>
-<p align="center">
-  <sub>Claude Code · Codex · Gemini CLI · Hermes Agent · Qwen Code · OpenClaw · OpenCode · Cursor · Qoder · CodeBuddy · GitHub Copilot</sub>
+  <img src="docs/images/mascots/codex.gif" width="36" alt="Codex mascot" title="Codex">&nbsp;
+  <img src="docs/images/mascots/claude.gif" width="36" alt="Claude Code mascot" title="Claude Code">&nbsp;
+  <img src="docs/images/mascots/gemini.gif" width="36" alt="Gemini CLI mascot" title="Gemini CLI">&nbsp;
+  <img src="docs/images/mascots/qwen.gif" width="36" alt="Qwen Code mascot" title="Qwen Code">&nbsp;
+  <img src="docs/images/mascots/opencode.gif" width="36" alt="OpenCode mascot" title="OpenCode">
 </p>
 
-<a id="buddy-detach"></a>
-## Buddy 离岛（v0.5.0+）
+<a id="buddy-离岛"></a>
+## Buddy 离岛
 
-从 `v0.5.0` 开始，也就是 `v0.4.0` 之后的首个版本，Ping Island 支持把当前 Buddy 宠物从刘海里拖出来。长按刘海后向上拖出刘海区域，松手后它就会变成独立悬浮的小伙伴，在你切换到其他窗口时继续陪着你。
+Jade Cub 支持把当前 Buddy 从刘海里拖出来：长按刘海，向上拖出刘海区域，松手后它会变成独立悬浮的小伙伴。离岛后的 Buddy 仍然代表同一个实时会话、客户端形象和进度状态。
 
-<p align="center">
-  <img src="docs/images/ping-island-0.5.0-buddy-detach-cn.png" width="960" alt="Ping Island v0.5.0 Buddy 离岛海报">
-</p>
+## Jade Cub 是什么？
 
-- **三步完成** - 长按刘海、向外拖出、松手后保持独立悬浮。
-- **独立悬浮陪伴** - 不必一直盯着顶部刘海，也能持续感知当前会话状态。
-- **自由拖动、不打断工作** - 宠物可以放到更顺手的位置，而不是只能固定在菜单栏顶部。
-- **会话上下文不断线** - 离岛后的 Buddy 仍然代表同一个实时会话、客户端形象和进度提示。
+Jade Cub 是一个 macOS 菜单栏应用。当 Codex、Claude Code 或其他编码 Agent 需要审批、输入、查看结果或人工介入时，它会在顶部展开成类似 Dynamic Island 的悬浮界面。
 
-## Ping Island 是什么？
+这个项目基于 [Ping Island](https://github.com/erha19/ping-island) 改造而来，保留 Apache 2.0 许可证和上游署名；Jade Cub 的产品方向更偏 Codex-first、绿色小熊视觉、简化设置页，以及更贴近日常本地工作流的 Obsidian 任务配置。
 
-Ping Island 是一个 macOS 菜单栏应用。当你的编码 Agent 需要你处理审批、输入或查看结果时，它会展开成一个类似 Dynamic Island 的悬浮界面。它能接 Claude 风格 hooks、Codex hooks、Gemini CLI hooks、Hermes Agent plugin hooks、Qwen Code hooks、OpenClaw internal hooks + session transcripts、Codex app-server、OpenCode 插件，以及兼容 IDE 的集成层，所以你不用一直盯着终端标签页，也能看到会话状态。
+当前源码里的 Xcode target、部分目录和内部 bridge 名称仍保留 `PingIsland` / `PingIslandBridge`，这是为了降低重构风险；对外产品名、应用名和打包产物是 `Jade Cub` / `JadeCub`。
 
-如果你了解过 [Vibe Island](https://vibeisland.app/)，可以把 Ping Island 理解成同一产品方向下的独立开源替代方案：它同样是一个原生 macOS 刘海区 / 菜单栏界面，用来监控和控制 AI 编码会话。
-
-项目当前的主运行链路很直接：
-
-```text
-Hook / app-server 事件
-  -> 监控与服务层
-    -> SessionStore
-      -> SessionMonitor + NotchViewModel
-        -> 刘海 UI、会话列表、hover 预览、完成提醒
-```
-
-<a id="features"></a>
+<a id="功能特性"></a>
 ## 功能特性
 
-Ping Island 关注的，是那些真正会打断编码节奏的时刻，并把它们用原生 macOS 刘海界面接住。
+- **Codex-first 状态岛** - 平时保持紧凑，思考、审批、追问、完成等状态会在刘海区域即时呈现。
+- **原地处理** - 可以直接在 Island 里处理审批、回答追问，并查看完成提示。
+- **一键跳回现场** - 快速回到对应的 iTerm2、Ghostty、Terminal.app、tmux pane 或兼容 IDE 窗口。
+- **Obsidian 今日任务** - 可选读取你配置的 Daily note 路径，显示今日任务进度；仓库中只保留占位路径，不包含个人 vault 路径。
+- **自定义声音** - 支持 macOS 系统音、内置 8-bit 音效，以及本地 OpenPeon / CESP 主题包。
+- **自定义宠物形象** - 可按客户端覆盖专属吉祥物，并同步到 notch、会话列表和 hover 预览。
+- **多客户端兼容** - 支持 Codex、Claude Code、Gemini CLI、Qwen Code、OpenCode、Cursor、Qoder、CodeBuddy、GitHub Copilot 等 hook 或 app-server 来源。
+- **远程与集成能力保留** - 远程 SSH 和集成管理代码仍在项目中，但默认设置页先隐藏，避免普通用户被暂时用不到的配置打扰。
 
-- **先感知，再展开** - 平时保持紧凑，只有在会话需要审批、输入、查看结果或人工介入时才展开。
-- **原地处理** - 直接在刘海界面里批准工具调用、拒绝请求、回答追问。
-- **一键跳回现场** - 快速回到对应的 iTerm2、Ghostty、Terminal.app、tmux pane 或 IDE 窗口。
-- **SSH 终端支持** - 可以通过 SSH 自动引导远程 PingIslandBridge，把远程 Claude 兼容 hooks 重写到桥接入口，并把远程终端里的事件统一回流到你本机的 Island 界面。
-- **多 Agent 统一收口** - 在一个菜单栏入口里持续跟踪 Claude Code、Codex、Gemini CLI、Hermes Agent、Qwen Code、OpenClaw、OpenCode、Cursor、Qoder、CodeBuddy、WorkBuddy、GitHub Copilot 等兼容会话。
-- **OpenClaw Gateway 支持** - 先通过 OpenClaw internal hooks 快速拿到会话事件，再从本地 session transcript 回填完整对话，让 Island 不只显示单条入站消息。
-- **Codex hooks + app-server** - 同时支持 Codex CLI hooks、实时 app-server 线程同步，以及 rollout 解析兜底。
-- **自定义音效** - 可按事件选择 macOS 系统音，也支持导入本地 sound pack。
-- **自定义 Agent 形象** - 可按客户端覆盖专属吉祥物，并同步到 notch、会话列表和 hover 预览。
-- **Buddy 离岛（v0.5.0+）** - 可把当前宠物从刘海里拖出来，作为独立悬浮小伙伴持续陪伴。
-- **Hermes 专属宠物** - Hermes Agent 默认使用一只带翼盔和信使挎包的金色“翼盔信使狐”，和 Claude / Qwen 体系做明显区分。
-- **Qwen 专属宠物** - Qwen Code 默认使用一只带薄荷围巾的卡皮巴拉，强调稳定、耐心、适合连续追问的气质。
-
-<a id="supported-tools"></a>
+<a id="支持的工具"></a>
 ## 支持的工具
 
-| 图标 | 工具 | 接入方式 | 跳转 | 覆盖范围 |
-|:---:|------|----------|------|----------|
-| <img src="docs/images/product-icons/claude-app-icon.png" width="32" alt="Claude Code 产品图标"> | Claude Code | Claude hooks | 终端、tmux、IDE 内终端 | 审批、提问、压缩、完成提醒 |
-| <img src="PingIsland/Assets.xcassets/CodexLogo.imageset/codex-logo.png" width="32" alt="Codex 产品图标"> | Codex App + Codex CLI | Codex app-server、hooks、rollout 解析兜底 | Codex 应用、终端 | 审批、输入请求、线程同步 |
-| <img src="PingIsland/Assets.xcassets/GeminiLogo.imageset/gemini-logo.png" width="32" alt="Gemini CLI 产品图标"> | Gemini CLI | Gemini CLI hooks（`~/.gemini/settings.json`） | 兼容终端宿主 | 会话生命周期、工具活动、通知、压缩前事件 |
-| <img src="docs/images/mascots/hermes.gif" width="32" alt="Hermes Agent 宠物图标"> | Hermes Agent | 官方 plugin hooks（`~/.hermes/plugins/ping_island/`） | Hermes CLI 终端宿主 | 用户输入、工具前后事件、回复完成、会话结束提示 |
-| <img src="docs/images/mascots/qwen.gif" width="32" alt="Qwen Code 宠物图标"> | Qwen Code | 官方 hooks（`~/.qwen/settings.json`） | 兼容终端宿主 | 追问、消息弹窗、通知、远程 SSH hooks 转发 |
-| <img src="docs/images/product-icons/opencode-app-icon.png" width="32" alt="OpenCode 产品图标"> | OpenCode | 托管插件文件 | OpenCode 应用、终端 | 插件事件转发到同一套 Island UI |
-| <img src="docs/images/product-icons/cursor-app-icon.png" width="32" alt="Cursor 产品图标"> | Cursor | Claude 兼容 hooks + 可选 IDE 扩展 | 项目窗口 + 对应终端 | IDE 路由与终端精准聚焦 |
-| <img src="PingIsland/Assets.xcassets/QoderLogo.imageset/qoder-logo.png" width="32" alt="Qoder 产品图标"> | Qoder/QoderWork/... | Qoder、QoderWork、Qoder CLI、JetBrains 兼容路径 | Qoder / QoderWork 窗口、终端 | 会话跳转、审批、提醒 |
-| <img src="docs/images/product-icons/codebuddy-app-icon.png" width="32" alt="CodeBuddy 产品图标"> | CodeBuddy | Hook 集成 + 可选 IDE 扩展 | 应用窗口 + 终端 | Claude 家族会话跟踪 |
-| <img src="docs/images/product-icons/workbuddy-app-icon.png" width="32" alt="WorkBuddy 产品图标"> | WorkBuddy | Hook 集成 + 可选 IDE 扩展 | 应用窗口 + 终端 | Claude 家族会话跟踪 |
-| <img src="PingIsland/Assets.xcassets/CopilotLogo.imageset/copilot-logo.png" width="32" alt="GitHub Copilot 产品图标"> | GitHub Copilot | Copilot hook 协议 | 兼容终端宿主 | Copilot CLI / Agent hooks 事件 |
+Jade Cub 当前关注 Codex 和 Claude Code，同时保留多 Agent 兼容层：
 
-Ping Island 另外还提供 VS Code 兼容的聚焦扩展，可用于 VS Code、Cursor、CodeBuddy、WorkBuddy 和 Qoder。`QoderWork` 当前仅走 hook 接入，不参与 IDE 扩展路径。
+- Codex App + Codex CLI：Codex app-server、hooks、rollout 解析兜底。
+- Claude Code：Claude 兼容 hooks、审批、追问、完成提醒。
+- Gemini CLI / Qwen Code / OpenCode：通过各自 hook 或插件机制接入。
+- Cursor / Qoder / CodeBuddy / WorkBuddy：通过 hook 与 VS Code 兼容聚焦扩展辅助跳转。
+- GitHub Copilot CLI / Agent hooks：通过兼容事件进入同一套 Island UI。
 
-Hermes Agent 现在通过生成 `~/.hermes/plugins/ping_island/` 目录来接入。因为 Hermes 的 `~/.hermes/hooks/` 只在 gateway 生效，不会在 CLI 里触发，所以 Ping Island 走的是官方 `ctx.register_hook()` 插件机制，专门观察用户输入、工具调用、回复完成和会话结束。
-
-Qwen Code 现在按一等公民客户端处理，直接管理 `~/.qwen/settings.json`，并配套默认宠物“薄荷围巾卡皮巴拉”。这个形象保留了 Qwen 的青绿色识别，但整体更稳、更耐看，也更适合长对话和连续追问场景。
-
-OpenClaw 当前通过 `~/.openclaw/hooks/` 下的托管 internal hook 目录接入，同时会从 `~/.openclaw/agents/main/sessions/` 读取本地 session transcript 以回填完整对话过程。
-
-SSH 远程支持是 Ping Island 的正式能力，而不是额外脚本。它可以把桥接程序引导到远程 macOS / Linux 主机上，重写远程 Claude 兼容 hooks 和 Qwen Code hooks、安装受支持的 OpenClaw internal hooks，让事件先进入桥接层，再通过双向转发回到你本机的菜单栏 UI。因此即使会话跑在远程 SSH 终端里，审批、追问、通知和一键跳回也仍然能落在同一个 Island 界面里。
-
-<a id="installation"></a>
 ## 安装
 
-### 下载发行版
+1. 打开 [Releases](https://github.com/liuyuplus/jade-cub/releases)。
+2. 下载最新 DMG。
+3. 将 `Jade Cub.app` 拖到 Applications。
+4. 启动应用，并打开你希望 Jade Cub 监控的客户端。
 
-1. 先访问[官网](https://erha19.github.io/ping-island/)查看产品介绍和最新下载入口，或直接打开 [Releases](https://github.com/erha19/ping-island/releases)
-2. 下载最新的 DMG 或 zip 包
-3. 将 `Ping Island.app` 拖到 Applications
-4. 启动应用，并打开你希望 Ping Island 监控的客户端
+首次启动时，macOS 可能会要求你确认应用，或授予辅助功能 / Apple Events 权限以支持窗口聚焦。
 
-> 首次启动时，macOS 可能会要求你确认应用，或授予辅助功能 / Apple Events 权限以支持聚焦能力。
+<a id="从源码构建"></a>
+## 从源码构建
 
-<a id="build-from-source"></a>
-### 从源码构建
-
-需要 macOS 14+，以及能同时构建 Xcode 工程和 Swift 6.1 `Prototype` 测试包的 Xcode 工具链。
+需要 macOS 14+，以及能构建 Xcode 工程和 Swift 6.1 `Prototype` 包的 Xcode 工具链。
 
 ```bash
-git clone https://github.com/erha19/ping-island.git
-cd ping-island
+git clone https://github.com/liuyuplus/jade-cub.git
+cd jade-cub
 
-# Debug 构建
 xcodebuild -project PingIsland.xcodeproj -scheme PingIsland -configuration Debug build
-
-# Release 构建
 xcodebuild -project PingIsland.xcodeproj -scheme PingIsland -configuration Release build
 ```
 
-如果你想产出本地分发用的未签名安装包：
+如果你想生成本地测试用的未签名安装包：
 
 ```bash
 ./scripts/package-unsigned.sh
 ```
 
-默认会使用仓库里的 `docs/images/ping-island-dmg-installer-background.png` 作为 DMG 安装背景；如果你想在本地预览别的背景图，可以临时设置 `PING_ISLAND_DMG_BACKGROUND_SOURCE`。
+产物会输出到 `releases/unsigned/`，文件名类似 `JadeCub-<version>-release-unsigned.dmg` 和 `JadeCub-<version>-release-unsigned.zip`。未签名包只适合本地测试，首次打开可能需要在 Finder 里右键选择 Open。
 
-如果你想通过 GitHub Actions 产出带 `Developer ID` 签名并完成 notarization 的发布包，请先按 [docs/sparkle-release.md](docs/sparkle-release.md) 配好仓库 secrets，再运行 `.github/workflows/release-packages.yml`。
-
-完整的 Sparkle / notarization 发布流程见 [docs/sparkle-release.md](docs/sparkle-release.md)。
-
-## 测试
-
-整仓库的最快完整回归入口是：
-
-```bash
-./scripts/test.sh
-```
-
-它会覆盖：
-
-```bash
-swift test --package-path Prototype
-xcodebuild -project PingIsland.xcodeproj -scheme PingIsland -configuration Debug CODE_SIGNING_ALLOWED=NO test -only-testing:PingIslandTests
-xcodebuild -project PingIsland.xcodeproj -scheme PingIsland -configuration Debug CODE_SIGN_IDENTITY=- test
-```
-
-常用分片：
-
-```bash
-swift test --package-path Prototype --filter IslandBridgeE2ETests
-xcodebuild -project PingIsland.xcodeproj -scheme PingIsland -configuration Debug CODE_SIGNING_ALLOWED=NO test -only-testing:PingIslandTests
-xcodebuild -project PingIsland.xcodeproj -scheme PingIsland -configuration Debug CODE_SIGN_IDENTITY=- test -only-testing:PingIslandUITests
-```
-
-如果 `PingIslandUITests-Runner` 在 macOS 上一直停在 suspended，优先在 Xcode 里用有效本地签名身份跑 UI 测试，并结合 `amfid` / `AppleSystemPolicy` 日志判断是不是代码签名或系统策略问题。
+如果要做 Developer ID 签名、notarization 和 Sparkle appcast，请参考 [docs/sparkle-release.md](docs/sparkle-release.md)。
 
 ## 设置面板
 
-Ping Island 当前提供 4 个设置分类：
+Jade Cub 当前保留一个更聚焦的设置面板：
 
-- **General** - 登录启动与基础行为
-- **Display** - 显示器选择与位置行为
-- **Mascot** - 宠物预览、客户端覆盖、动作状态
-- **Sound** - 事件声音、声音包模式、声音包导入
+- **通用** - 登录启动、基础行为。
+- **显示** - 选择 Island 所在显示器和全屏行为。
+- **Obsidian** - 可选开启今日任务，配置 vault、Daily 目录、模板路径和文件名模式。
+- **快捷键** - Island 和会话跳转的键盘访问。
+- **宠物** - Jade Cub 头像、客户端覆盖和状态预览。
+- **声音** - 事件声音、声音包模式、声音包导入。
+- **关于** - 版本、更新、GitHub 链接和诊断导出。
+
+远程 SSH 和集成管理暂时从默认设置页隐藏。如果后续用户需求明确，可以再把它们以更清晰的高级设置形式放回来。
+
+## Obsidian 今日任务
+
+Obsidian 页面是可选功能，默认不需要配置。你可以按自己的 vault 结构填写：
+
+- `Obsidian Vault`：vault 根目录。
+- `Daily 笔记目录`：每日笔记所在目录。
+- `文件名模式`：例如 `yyyy-MM-dd`。
+- `模板路径`：可选，用于说明或后续扩展，不会提交你的真实路径到仓库。
+
+Jade Cub 只在本机读取你选择的 Markdown 文件，用来显示今日任务进度；不会把笔记内容上传到任何 Jade Cub 服务。
 
 ## 自定义音效
 
-Ping Island 在 `设置 -> Sound` 里提供三种声音模式：
+在 `设置 -> 声音` 里可以选择三种模式：
 
-- **系统音** - 为每个事件单独选择一个 macOS 系统音。
-- **内置 8-bit** - 使用 Island 自带的复古音效集，并包含固定的客户端启动音。
+- **系统音** - 为每个事件选择 macOS 系统音。
+- **内置 8-bit** - 使用内置复古音效。
 - **主题包** - 从本地导入兼容 OpenPeon / CESP 的音效包。
 
-### 快速配置
-
-1. 打开 `设置 -> Sound`。
-2. 开启 `启用提示音`。
-3. 选择你需要的模式：
-   - 如果只是想给不同事件换系统提示音，选 `系统音`。
-   - 如果想使用自己的音频文件，选 `主题包`。
-4. 用每一行右侧的试听按钮确认效果，并只保留你需要的事件开关。
-
-### 导入本地主题包
-
-1. 将 `声音模式` 切到 `主题包`。
-2. 点击 `导入本地主题包`。
-3. 选择一个包含 `openpeon.json` 的目录。
-4. 在 `主题包` 下拉框里选中刚导入的包。
-
-Ping Island 也会自动发现放在 `~/.openpeon/packs` 和 `~/.claude/hooks/peon-ping/packs` 下面的主题包。
-
-### 最小目录结构
+主题包的最小结构如下：
 
 ```text
 my-pack/
@@ -242,71 +154,30 @@ my-pack/
   limit.wav
 ```
 
-```json
-{
-  "cesp_version": "1.0",
-  "name": "my-pack",
-  "display_name": "My Pack",
-  "categories": {
-    "task.acknowledge": {
-      "sounds": [{ "file": "session-start.wav", "label": "Session Start" }]
-    },
-    "input.required": {
-      "sounds": [{ "file": "attention.ogg", "label": "Attention" }]
-    },
-    "task.complete": {
-      "sounds": [{ "file": "complete.mp3", "label": "Complete" }]
-    },
-    "task.error": {
-      "sounds": [{ "file": "error.wav", "label": "Error" }]
-    },
-    "resource.limit": {
-      "sounds": [{ "file": "limit.wav", "label": "Limit" }]
-    }
-  }
-}
-```
-
-### 事件映射
-
-- `开始处理` 会依次检查 `task.acknowledge`、`session.start`。
-- `需要介入` 会检查 `input.required`。
-- `完成` 会检查 `task.complete`。
-- `任务失败` 会检查 `task.error`。
-- `资源受限` 会检查 `resource.limit`。
-
-主题包里的音频文件支持 `.wav`、`.mp3`、`.ogg`。如果当前主题包没有提供某个事件对应的分类，Ping Island 会回退到该事件当前选中的 macOS 系统音。
-
 ## 工作原理
 
 ```text
-Claude / Codex / Gemini CLI / OpenCode / Cursor / Qoder / CodeBuddy / WorkBuddy / Copilot / ...
+Codex / Claude Code / Gemini CLI / OpenCode / Cursor / Qoder / CodeBuddy / Copilot / ...
   -> hook 或 app-server 事件
-    -> Ping Island 监控与归一化层
+    -> Jade Cub 监控与归一化层
       -> SessionStore
         -> SessionMonitor / NotchViewModel
           -> 刘海、列表、hover 预览、完成提示
 ```
 
-几个实现细节：
-
-- Claude 家族工具主要通过托管 hook 文件和内嵌的 `PingIslandBridge` 启动器接入。
-- Codex 会话既可以来自 hooks，也可以来自 `codex app-server` websocket 实时同步。
-- Gemini CLI hooks 会安装到 `~/.gemini/settings.json`，其中工具 matcher 要使用 Gemini 的正则语法。
-- Qwen Code hooks 会安装到 `~/.qwen/settings.json`，桥接层沿用官方事件名，并把 `Stop` / `SessionEnd` / `Notification` 的消息内容转成 Island 可直接展示的提示与弹窗文案。
-- OpenCode 使用生成到 `~/.config/opencode/plugins/` 下的插件文件接入。
-- 远程 SSH 主机可以自动引导 `PingIslandBridge`，重写远程 Claude 兼容 hooks 指向桥接入口，并把远程事件回流到本机 Ping Island。
-- 聚焦路由覆盖 iTerm2、Ghostty、Terminal.app、tmux 和 VS Code 兼容 IDE 扩展。
-
 ## 系统要求
 
-- macOS 14.0 或更高
-- 在带刘海的 MacBook 上体验最好，但也支持外接显示器
-- 安装你希望 Ping Island 监控的 CLI 或桌面客户端
+- macOS 14.0 或更高。
+- 带刘海的 MacBook 体验最好，也支持外接显示器。
+- 安装你希望 Jade Cub 监控的 CLI 或桌面客户端。
+
+## 隐私
+
+Jade Cub 是 local-first 应用，默认不包含产品分析、遥测或托管后端。它会根据你启用的功能读取本地 hook 事件、会话元数据、窗口信息和可选 Obsidian 路径。详细说明见 [PRIVACY.md](PRIVACY.md)。
 
 ## 致谢
 
-Ping Island 延续了 [claude-island](https://github.com/farouqaldori/claude-island) 这类刘海式 Agent 监视器的思路，并把它扩展到了多客户端 hooks、Codex app-server 同步和 IDE 路由能力上。
+Jade Cub 基于 [Ping Island](https://github.com/erha19/ping-island) by erha19 改造，并延续 Apache 2.0 许可证。Ping Island 也属于 [claude-island](https://github.com/farouqaldori/claude-island) 等刘海式 Agent 监视器的思路谱系。感谢上游作者把这些工作开源出来。
 
 ## 许可证
 

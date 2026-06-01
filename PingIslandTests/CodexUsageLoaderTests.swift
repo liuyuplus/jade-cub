@@ -141,6 +141,82 @@ final class CodexUsageLoaderTests: XCTestCase {
         XCTAssertEqual(snapshot?.windows.first?.roundedUsedPercentage, 13)
     }
 
+    func testLoadPrefersDefaultCodexLimitOverNewerModelSpecificLimit() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-default-limit")
+        let defaultLimitRolloutURL = rootURL
+            .appendingPathComponent("2026/05/06", isDirectory: true)
+            .appendingPathComponent("rollout-default-codex.jsonl")
+        let modelLimitRolloutURL = rootURL
+            .appendingPathComponent("2026/05/06", isDirectory: true)
+            .appendingPathComponent("rollout-model-specific.jsonl")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-05-06T09:06:59.000Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex",
+                            "plan_type": "prolite",
+                            "primary": [
+                                "used_percent": 18.0,
+                                "window_minutes": 300,
+                                "resets_at": 1_778_070_219,
+                            ],
+                            "secondary": [
+                                "used_percent": 12.0,
+                                "window_minutes": 10_080,
+                                "resets_at": 1_778_561_221,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: defaultLimitRolloutURL
+        )
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-05-06T09:07:00.000Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex_bengalfox",
+                            "limit_name": "GPT-5.3-Codex-Spark",
+                            "primary": [
+                                "used_percent": 0.0,
+                                "window_minutes": 300,
+                                "resets_at": 1_778_076_390,
+                            ],
+                            "secondary": [
+                                "used_percent": 0.0,
+                                "window_minutes": 10_080,
+                                "resets_at": 1_778_663_190,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: modelLimitRolloutURL
+        )
+        try setModificationDate(Date(timeIntervalSince1970: 2_000), for: defaultLimitRolloutURL)
+        try setModificationDate(Date(timeIntervalSince1970: 3_000), for: modelLimitRolloutURL)
+
+        let snapshot = try CodexUsageLoader.load(fromRootURL: rootURL)
+
+        XCTAssertEqual(resolvedPath(snapshot?.sourceFilePath), defaultLimitRolloutURL.resolvingSymlinksInPath().path)
+        XCTAssertEqual(snapshot?.limitID, "codex")
+        XCTAssertEqual(snapshot?.windows.map(\.roundedUsedPercentage), [18, 12])
+        XCTAssertEqual(snapshot?.windows.map(\.leftPercentage), [82, 88])
+    }
+
     func testLoadFormatsNonStandardWindowLengths() throws {
         let rootURL = temporaryRootURL(named: "codex-usage-labels")
         let rolloutURL = rootURL

@@ -51,6 +51,7 @@ class SoundManager {
     /// Play boot sound on app launch
     func playBoot() {
         guard defaults.bool(forKey: "soundEnabled") else { return }
+        guard !AppSettings.areReminderNotificationsSuppressed else { return }
         guard defaults.bool(forKey: "soundBoot") else { return }
         play("8bit_boot")
     }

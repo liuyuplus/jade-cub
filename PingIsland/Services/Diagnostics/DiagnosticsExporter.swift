@@ -203,8 +203,8 @@ actor DiagnosticsExporter {
     func exportArchive(to destinationURL: URL) async throws -> DiagnosticsExportResult {
         let timestamp = Self.archiveTimestamp()
         let tempRoot = fileManager.temporaryDirectory
-            .appendingPathComponent("PingIsland-Diagnostics-\(UUID().uuidString)", isDirectory: true)
-        let exportRoot = tempRoot.appendingPathComponent("PingIsland-Diagnostics-\(timestamp)", isDirectory: true)
+            .appendingPathComponent("JadeCub-Diagnostics-\(UUID().uuidString)", isDirectory: true)
+        let exportRoot = tempRoot.appendingPathComponent("JadeCub-Diagnostics-\(timestamp)", isDirectory: true)
         var warnings: [String] = []
 
         try fileManager.createDirectory(at: exportRoot, withIntermediateDirectories: true)
@@ -475,7 +475,7 @@ actor DiagnosticsExporter {
     }
 
     private func writeUnifiedLogs(to destinationURL: URL) async throws {
-        let predicate = "subsystem == \"com.wudanwu.pingisland\""
+        let predicate = "subsystem == \"io.github.liuyuplus.jadecub\""
         try await writeCommandOutput(
             executable: "/usr/bin/log",
             arguments: [

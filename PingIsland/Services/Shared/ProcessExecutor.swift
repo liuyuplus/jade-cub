@@ -55,7 +55,7 @@ protocol ProcessExecuting: Sendable {
 struct ProcessExecutor: ProcessExecuting {
     static let shared = ProcessExecutor()
 
-    static let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "ProcessExecutor")
+    static let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "ProcessExecutor")
 
     private init() {}
 

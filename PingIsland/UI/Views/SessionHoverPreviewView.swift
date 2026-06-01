@@ -472,31 +472,43 @@ private struct HoverApprovalCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            HStack(spacing: 8) {
-                Button("Deny") {
-                    sessionMonitor.denyPermission(sessionId: session.sessionId, reason: nil)
-                    onActionCompleted()
-                }
-                .buttonStyle(HoverApprovalButtonStyle(background: Color.white.opacity(0.1)))
-
-                if let sessionAction = session.scopedApprovalAction {
-                    Button(AppLocalization.string(sessionAction.buttonTitleKey)) {
-                        sessionMonitor.approvePermission(sessionId: session.sessionId, forSession: true)
+            if session.intervention?.supportsInlineResponse == false {
+                Button {
+                    Task {
+                        _ = await SessionLauncher.shared.activateClientApplication(session)
                         onActionCompleted()
                     }
-                    .buttonStyle(
-                        HoverApprovalButtonStyle(
-                            background: TerminalColors.blue.opacity(0.26),
-                            foreground: .white.opacity(0.95)
-                        )
-                    )
+                } label: {
+                    Text(verbatim: AppLocalization.format("打开 %@", session.interactionDisplayName))
                 }
+                .buttonStyle(HoverApprovalButtonStyle(background: Color.white.opacity(0.9), foreground: .black))
+            } else {
+                HStack(spacing: 8) {
+                    Button("Deny") {
+                        sessionMonitor.denyPermission(sessionId: session.sessionId, reason: nil)
+                        onActionCompleted()
+                    }
+                    .buttonStyle(HoverApprovalButtonStyle(background: Color.white.opacity(0.1)))
 
-                Button("Allow") {
-                    sessionMonitor.approvePermission(sessionId: session.sessionId)
-                    onActionCompleted()
+                    if let sessionAction = session.scopedApprovalAction {
+                        Button(AppLocalization.string(sessionAction.buttonTitleKey)) {
+                            sessionMonitor.approvePermission(sessionId: session.sessionId, forSession: true)
+                            onActionCompleted()
+                        }
+                        .buttonStyle(
+                            HoverApprovalButtonStyle(
+                                background: TerminalColors.blue.opacity(0.26),
+                                foreground: .white.opacity(0.95)
+                            )
+                        )
+                    }
+
+                    Button("Allow") {
+                        sessionMonitor.approvePermission(sessionId: session.sessionId)
+                        onActionCompleted()
+                    }
+                    .buttonStyle(HoverApprovalButtonStyle(background: Color.white.opacity(0.92), foreground: .black))
                 }
-                .buttonStyle(HoverApprovalButtonStyle(background: Color.white.opacity(0.92), foreground: .black))
             }
         }
         .padding(.top, 12)
@@ -713,7 +725,7 @@ private struct HoverSessionBadges: View {
     var density: HoverPreviewDensity = .regular
 
     private var timeLabel: String {
-        SessionPhaseHelpers.timeBadgeLabel(for: session.lastActivity)
+        SessionPhaseHelpers.activityBadgeLabel(for: session)
     }
 
     var body: some View {

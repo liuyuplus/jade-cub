@@ -151,6 +151,7 @@ final class DetachedIslandViewController: NSViewController {
 final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate {
     private static let defaultTrailingInset: CGFloat = 32
     private static let defaultBottomInset: CGFloat = 48
+    private static let notificationSoundFreshnessWindow: TimeInterval = 90
 
     private let viewModel: NotchViewModel
     private let sessionMonitor: SessionMonitor
@@ -185,6 +186,7 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
     private var previousResourceLimitIds = Set<String>()
     private var previousCompletionNotificationPhases: [String: SessionPhase] = [:]
     private var completionNotificationQueue: [SessionCompletionNotification] = []
+    private var presentedCompletionNotificationKeys = Set<String>()
     var bubbleHoverGraceDelay: TimeInterval = 3
     var completionNotificationDismissDelay: TimeInterval = 5
     private var activeCompletionNotification: SessionCompletionNotification? {
@@ -272,7 +274,7 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
             self?.handleCompletionNotificationHover(isHovering)
         }
         hostingController.onDismissCompletionNotification = { [weak self] in
-            self?.dismissActiveCompletionNotification(closeBubble: true, advanceQueue: true)
+            self?.acknowledgeActiveCompletionNotification(closeBubble: true)
         }
         window.petMouseDownHandler = { [weak self] event in
             self?.handlePetMouseDown(event) ?? false
@@ -1385,11 +1387,14 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
             return
         }
 
+        prunePresentedCompletionNotificationKeys(using: instances)
+
         let currentPhases = Dictionary(
             uniqueKeysWithValues: instances.map { ($0.stableId, $0.phase) }
         )
 
         if interactionModel.bubbleState == .pinned && activeCompletionNotification == nil {
+            acknowledgeCompletionNotificationsAlreadyInView(instances)
             previousCompletionNotificationPhases = currentPhases
             completionNotificationQueue.removeAll()
             return
@@ -1427,10 +1432,9 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
         for session: SessionState,
         previousPhase: SessionPhase?
     ) -> Bool {
-        guard AppSettings.autoOpenCompletionPanel else { return false }
-        guard SessionCompletionStateEvaluator.isCompletedReadySession(session) else { return false }
-        guard previousPhase != .waitingForInput else { return false }
-        return true
+        // Detached mode also has its own completed mascot/badge state. Avoid
+        // auto-opening a completion bubble for the same event.
+        false
     }
 
     private func shouldQueueEndedNotification(
@@ -1441,6 +1445,7 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
         guard session.phase == .ended else { return false }
         guard previousPhase != .ended else { return false }
         guard previousPhase != .waitingForInput else { return false }
+        guard !hasPresentedCompletionNotification(for: session, kind: .ended) else { return false }
         return true
     }
 
@@ -1451,6 +1456,7 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
         guard AppSettings.autoOpenCompactedNotificationPanel else { return false }
         guard previousPhase == .compacting else { return false }
         guard session.phase != .compacting else { return false }
+        guard !hasPresentedCompletionNotification(for: session, kind: .compacted) else { return false }
         return true
     }
 
@@ -1474,6 +1480,11 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
     }
 
     private func enqueueCompletionNotification(_ notification: SessionCompletionNotification) {
+        guard !hasPresentedCompletionNotification(
+            for: notification.session,
+            kind: notification.kind
+        ) else { return }
+
         if let active = activeCompletionNotification,
            active.session.stableId == notification.session.stableId {
             activeCompletionNotification?.session = notification.session
@@ -1495,7 +1506,6 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
     private func maybePresentNextCompletionNotification() {
         guard !AppSettings.areReminderNotificationsSuppressed else { return }
         guard activeCompletionNotification == nil else { return }
-        guard !completionNotificationQueue.isEmpty else { return }
         guard case .instances = viewModel.contentType else { return }
         guard interactionModel.bubbleState != .pinned else { return }
         guard IslandExpandedRouteResolver.highestPriorityAttentionSession(
@@ -1504,7 +1514,15 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
             return
         }
 
+        while let first = completionNotificationQueue.first,
+              hasPresentedCompletionNotification(for: first.session, kind: first.kind) {
+            completionNotificationQueue.removeFirst()
+        }
+
+        guard !completionNotificationQueue.isEmpty else { return }
+
         let nextNotification = completionNotificationQueue.removeFirst()
+        markCompletionNotificationPresented(nextNotification)
         activeCompletionNotification = nextNotification
         applyBubbleStateChange {
             interactionModel.presentHoverPreview(canPresentBubble: true)
@@ -1528,18 +1546,32 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
         )
     }
 
-    private func clearCompletionNotifications(keepBubbleOpen: Bool) {
-        removeCompletionNotifications(matching: { _ in true }, keepBubbleOpen: keepBubbleOpen)
+    private func clearCompletionNotifications(keepBubbleOpen: Bool, acknowledge: Bool = false) {
+        removeCompletionNotifications(
+            matching: { _ in true },
+            keepBubbleOpen: keepBubbleOpen,
+            acknowledge: acknowledge
+        )
     }
 
     private func removeCompletionNotifications(
         matching shouldRemove: (SessionCompletionNotification.Kind) -> Bool,
-        keepBubbleOpen: Bool
+        keepBubbleOpen: Bool,
+        acknowledge: Bool = false
     ) {
+        if acknowledge {
+            for notification in completionNotificationQueue where shouldRemove(notification.kind) {
+                markCompletionNotificationPresented(notification)
+            }
+        }
+
         completionNotificationQueue.removeAll { shouldRemove($0.kind) }
 
         if let activeCompletionNotification,
            shouldRemove(activeCompletionNotification.kind) {
+            if acknowledge {
+                markCompletionNotificationPresented(activeCompletionNotification)
+            }
             dismissActiveCompletionNotification(
                 closeBubble: !keepBubbleOpen,
                 advanceQueue: true
@@ -1591,6 +1623,72 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
         }
     }
 
+    private func completionNotificationKey(
+        sessionId: String,
+        kind: SessionCompletionNotification.Kind
+    ) -> String {
+        "\(sessionId)#\(kind.rawValue)"
+    }
+
+    private func completionNotificationKey(
+        for session: SessionState,
+        kind: SessionCompletionNotification.Kind
+    ) -> String {
+        completionNotificationKey(sessionId: session.stableId, kind: kind)
+    }
+
+    private func hasPresentedCompletionNotification(
+        for session: SessionState,
+        kind: SessionCompletionNotification.Kind
+    ) -> Bool {
+        presentedCompletionNotificationKeys.contains(
+            completionNotificationKey(for: session, kind: kind)
+        )
+    }
+
+    private func markCompletionNotificationPresented(_ notification: SessionCompletionNotification) {
+        presentedCompletionNotificationKeys.insert(
+            completionNotificationKey(for: notification.session, kind: notification.kind)
+        )
+    }
+
+    private func markCompletionNotificationPresented(
+        for session: SessionState,
+        kind: SessionCompletionNotification.Kind
+    ) {
+        presentedCompletionNotificationKeys.insert(
+            completionNotificationKey(for: session, kind: kind)
+        )
+    }
+
+    private func acknowledgeActiveCompletionNotification(closeBubble: Bool) {
+        guard let activeCompletionNotification else { return }
+        markCompletionNotificationPresented(activeCompletionNotification)
+        dismissActiveCompletionNotification(closeBubble: closeBubble, advanceQueue: false)
+    }
+
+    private func acknowledgeCompletionNotificationsAlreadyInView(_ instances: [SessionState]) {
+        guard interactionModel.bubbleState == .pinned else { return }
+
+        for session in instances where SessionCompletionStateEvaluator.isCompletedReadySession(session) {
+            markCompletionNotificationPresented(for: session, kind: .completed)
+        }
+    }
+
+    private func prunePresentedCompletionNotificationKeys(using instances: [SessionState]) {
+        let liveIds = Set(instances.map(\.stableId))
+        presentedCompletionNotificationKeys = presentedCompletionNotificationKeys.filter { key in
+            guard let separator = key.firstIndex(of: "#") else { return false }
+            let sessionId = String(key[..<separator])
+            guard liveIds.contains(sessionId) else { return false }
+
+            guard let session = instances.first(where: { $0.stableId == sessionId }) else {
+                return false
+            }
+            return !session.phase.isActive && session.intervention == nil
+        }
+    }
+
     private func primeSoundTransitions(_ instances: [SessionState]) {
         previousProcessingIds = Set(
             instances
@@ -1609,7 +1707,7 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
         )
         previousTaskErrorIds = Set(
             instances.flatMap { session in
-                session.completedErrorToolIDs.map { "\(session.sessionId):\($0)" }
+                session.notificationFailureEventIDs.map { "\(session.sessionId):\($0)" }
             }
         )
         previousResourceLimitIds = Set(
@@ -1642,34 +1740,45 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
         let newCompletedIds = Set(completedSessions.map(\.stableId))
         let newTaskErrorIds = Set(
             instances.flatMap { session in
-                session.completedErrorToolIDs.map { "\(session.sessionId):\($0)" }
+                session.notificationFailureEventIDs.map { "\(session.sessionId):\($0)" }
             }
         )
         let newResourceLimitIds = Set(resourceLimitedSessions.map(\.stableId))
         let errorDeltaIds = newTaskErrorIds.subtracting(previousTaskErrorIds)
         let errorSessions = instances.filter { session in
-            session.completedErrorToolIDs.contains { errorDeltaIds.contains("\(session.sessionId):\($0)") }
+            session.notificationFailureEventIDs.contains { errorDeltaIds.contains("\(session.sessionId):\($0)") }
         }
         let completionDeltaIds = newCompletedIds.subtracting(previousCompletionSoundIds)
         let newlyCompletedSessions = completedSessions.filter { session in
             completionDeltaIds.contains(session.stableId)
         }
+        let processingDeltaIds = newProcessingIds.subtracting(previousProcessingIds)
+        let newlyProcessingSessions = processingSessions.filter { session in
+            processingDeltaIds.contains(session.stableId)
+        }
+        let newlyAttentionSessions = attentionSessions.filter { session in
+            newAttentionIds.subtracting(previousAttentionSoundIds).contains(session.stableId)
+        }
+        let newlyResourceLimitedSessions = resourceLimitedSessions.filter { session in
+            newResourceLimitIds.subtracting(previousResourceLimitIds).contains(session.stableId)
+        }
 
-        let isNewAttention = !newAttentionIds.subtracting(previousAttentionSoundIds).isEmpty
-        let isNewCompletion = !completionDeltaIds.isEmpty
-        let isNewTaskError = !errorDeltaIds.isEmpty
-        let isNewResourceLimit = !newResourceLimitIds.subtracting(previousResourceLimitIds).isEmpty
+        let isNewAttention = hasFreshSoundCandidate(newlyAttentionSessions)
+        let isNewCompletion = hasFreshSoundCandidate(newlyCompletedSessions)
+        let isNewTaskError = hasFreshSoundCandidate(errorSessions)
+        let isNewResourceLimit = hasFreshSoundCandidate(newlyResourceLimitedSessions)
+        let isNewProcessing = hasFreshSoundCandidate(newlyProcessingSessions)
 
         if isNewTaskError {
-            playEventSoundIfNeeded(.taskError, sessions: errorSessions)
+            playEventSoundIfNeeded(.taskError, sessions: freshSoundCandidates(from: errorSessions))
         } else if isNewResourceLimit {
-            playEventSoundIfNeeded(.resourceLimit, sessions: resourceLimitedSessions)
+            playEventSoundIfNeeded(.resourceLimit, sessions: freshSoundCandidates(from: newlyResourceLimitedSessions))
         } else if isNewAttention {
-            playEventSoundIfNeeded(.attentionRequired, sessions: attentionSessions)
+            playEventSoundIfNeeded(.attentionRequired, sessions: freshSoundCandidates(from: newlyAttentionSessions))
         } else if isNewCompletion {
-            playEventSoundIfNeeded(.taskCompleted, sessions: newlyCompletedSessions)
-        } else if !newProcessingIds.subtracting(previousProcessingIds).isEmpty {
-            playEventSoundIfNeeded(.processingStarted, sessions: processingSessions)
+            playEventSoundIfNeeded(.taskCompleted, sessions: freshSoundCandidates(from: newlyCompletedSessions))
+        } else if isNewProcessing {
+            playEventSoundIfNeeded(.processingStarted, sessions: freshSoundCandidates(from: newlyProcessingSessions))
         }
 
         previousProcessingIds = newProcessingIds
@@ -1679,15 +1788,29 @@ final class DetachedIslandWindowController: NSWindowController, NSWindowDelegate
         previousResourceLimitIds = newResourceLimitIds
     }
 
+    private func hasFreshSoundCandidate(_ sessions: [SessionState]) -> Bool {
+        !freshSoundCandidates(from: sessions).isEmpty
+    }
+
+    private func freshSoundCandidates(from sessions: [SessionState]) -> [SessionState] {
+        let now = Date()
+        return sessions.filter { session in
+            now.timeIntervalSince(session.lastActivity) <= Self.notificationSoundFreshnessWindow
+        }
+    }
+
     private func playEventSoundIfNeeded(_ event: NotificationEvent, sessions: [SessionState]) {
         guard AppSettings.soundEnabled else { return }
+        guard !sessions.isEmpty else { return }
 
         Task { [weak self] in
             guard let self else { return }
             let shouldPlaySound = await self.shouldPlayNotificationSound(for: sessions)
             if shouldPlaySound {
                 _ = await MainActor.run {
-                    AppSettings.playSound(for: event)
+                    if NotificationSoundPlaybackGate.shouldPlay(event: event, sessions: sessions) {
+                        AppSettings.playSound(for: event)
+                    }
                 }
             }
         }

@@ -45,6 +45,8 @@ enum CodexUsageLoader {
         let modifiedAt: Date
     }
 
+    private nonisolated static let reverseReadChunkSize = 64 * 1024
+
     nonisolated static func load(
         fromRootURL rootURL: URL = defaultRootURL,
         fileManager: FileManager = .default
@@ -84,32 +86,116 @@ enum CodexUsageLoader {
             return lhs.modifiedAt > rhs.modifiedAt
         }
 
+        var latestDefaultSnapshot: CodexUsageSnapshot?
+        var latestFallbackSnapshot: CodexUsageSnapshot?
         for candidate in sortedCandidates {
-            if let snapshot = loadLatestSnapshot(from: candidate.fileURL, modifiedAt: candidate.modifiedAt) {
-                return snapshot
+            guard let snapshot = loadLatestSnapshot(from: candidate.fileURL, modifiedAt: candidate.modifiedAt) else {
+                continue
+            }
+
+            if isDefaultCodexLimitID(snapshot.limitID) {
+                latestDefaultSnapshot = newerSnapshot(snapshot, than: latestDefaultSnapshot)
+            } else {
+                latestFallbackSnapshot = newerSnapshot(snapshot, than: latestFallbackSnapshot)
             }
         }
 
-        return nil
+        return latestDefaultSnapshot ?? latestFallbackSnapshot
+    }
+
+    private nonisolated static func isDefaultCodexLimitID(_ value: String?) -> Bool {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !value.isEmpty else {
+            return true
+        }
+        return value == "codex"
+    }
+
+    private nonisolated static func newerSnapshot(
+        _ candidate: CodexUsageSnapshot,
+        than current: CodexUsageSnapshot?
+    ) -> CodexUsageSnapshot {
+        guard let current else {
+            return candidate
+        }
+
+        let candidateDate = candidate.capturedAt ?? .distantPast
+        let currentDate = current.capturedAt ?? .distantPast
+        if candidateDate != currentDate {
+            return candidateDate > currentDate ? candidate : current
+        }
+
+        return candidate.sourceFilePath.localizedStandardCompare(current.sourceFilePath) == .orderedDescending
+            ? candidate
+            : current
     }
 
     private nonisolated static func loadLatestSnapshot(from fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
-        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
+            return nil
+        }
+        defer {
+            try? fileHandle.close()
+        }
+
+        let fileSize: UInt64
+        do {
+            fileSize = try fileHandle.seekToEnd()
+        } catch {
             return nil
         }
 
-        var latestSnapshot: CodexUsageSnapshot?
-        contents.enumerateLines { line, _ in
-            guard let snapshot = snapshot(from: line, filePath: fileURL.path, fallbackTimestamp: modifiedAt) else {
-                return
+        var offset = fileSize
+        var suffix = Data()
+        while offset > 0 {
+            let readSize = min(UInt64(reverseReadChunkSize), offset)
+            offset -= readSize
+
+            guard let chunk = try? readChunk(fileHandle, offset: offset, count: Int(readSize)) else {
+                return nil
             }
-            latestSnapshot = snapshot
+
+            var data = chunk
+            data.append(suffix)
+            let scanStart = data.startIndex
+            var searchEnd = data.endIndex
+
+            while searchEnd > scanStart,
+                  let newlineIndex = data[..<searchEnd].lastIndex(of: UInt8(ascii: "\n")) {
+                let lineStart = data.index(after: newlineIndex)
+                if lineStart < searchEnd,
+                   let snapshot = snapshot(
+                    from: Data(data[lineStart..<searchEnd]),
+                    filePath: fileURL.path,
+                    fallbackTimestamp: modifiedAt
+                   ) {
+                    return snapshot
+                }
+                searchEnd = newlineIndex
+            }
+
+            suffix = Data(data[scanStart..<searchEnd])
         }
-        return latestSnapshot
+
+        if !suffix.isEmpty,
+           let snapshot = snapshot(
+            from: suffix,
+            filePath: fileURL.path,
+            fallbackTimestamp: modifiedAt
+           ) {
+            return snapshot
+        }
+        return nil
     }
 
-    private nonisolated static func snapshot(from line: String, filePath: String, fallbackTimestamp: Date) -> CodexUsageSnapshot? {
-        guard let object = jsonObject(for: line),
+    private nonisolated static func readChunk(_ fileHandle: FileHandle, offset: UInt64, count: Int) throws -> Data {
+        try fileHandle.seek(toOffset: offset)
+        return fileHandle.readData(ofLength: count)
+    }
+
+    private nonisolated static func snapshot(from lineData: Data, filePath: String, fallbackTimestamp: Date) -> CodexUsageSnapshot? {
+        guard lineData.contains(UInt8(ascii: "{")),
+              let object = jsonObject(for: lineData),
               object["type"] as? String == "event_msg" else {
             return nil
         }
@@ -134,6 +220,10 @@ enum CodexUsageLoader {
             limitID: string(from: rateLimits["limit_id"]),
             windows: windows
         )
+    }
+
+    private nonisolated static func snapshot(from line: String, filePath: String, fallbackTimestamp: Date) -> CodexUsageSnapshot? {
+        snapshot(from: Data(line.utf8), filePath: filePath, fallbackTimestamp: fallbackTimestamp)
     }
 
     private nonisolated static func usageWindow(for key: String, in rateLimits: [String: Any]) -> CodexUsageWindow? {
@@ -179,8 +269,12 @@ enum CodexUsageLoader {
             return nil
         }
 
-        let data = Data(line.utf8)
-        guard let object = try? JSONSerialization.jsonObject(with: data),
+        return jsonObject(for: Data(line.utf8))
+    }
+
+    private nonisolated static func jsonObject(for data: Data) -> [String: Any]? {
+        guard !data.isEmpty,
+              let object = try? JSONSerialization.jsonObject(with: data),
               let dictionary = object as? [String: Any] else {
             return nil
         }

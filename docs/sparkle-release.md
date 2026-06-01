@@ -61,7 +61,7 @@ base64 -i developer-id-application.p12 | pbcopy
    - Use `releases/notes/README.md` as the authoring template.
 2. Make sure the app version matches the release tag.
    - Also bump `CURRENT_PROJECT_VERSION` / `CFBundleVersion` for every release. Sparkle relies on the monotonically increasing build version (`sparkle:version`) when deciding whether an update is newer.
-3. Push a tag like `v0.0.1`, or open the workflow manually with the same tag name.
+3. Push a tag like `v1.0.0`, or open the workflow manually with the same tag name.
 4. Publish the GitHub Release manually after reviewing the generated draft, or uncheck the `draft` input when you intentionally want the manual workflow run to publish immediately.
 
 Important: `https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml` only resolves for the latest published release. If the newest release is still a draft, or the published release was created without the `appcast.xml` asset, Sparkle clients will receive a 404 and update checks will fail.
@@ -70,7 +70,7 @@ The workflow will upload the signed `.dmg`, `.zip`, and a zipped Linux bridge pa
 When Sparkle secrets are present, the same draft Release will also include:
 
 - `appcast.xml`
-- `PingIsland-<version>.md`
+- `JadeCub-<version>.md`
 
 Use the GitHub Release assets as the canonical download surface so the DMG stays a direct `.dmg` file instead of an Actions artifact wrapped in an outer `.zip`.
 
@@ -80,6 +80,7 @@ If you want the full local release path including Sparkle appcast generation and
 
 1. Copy `Config/LocalSecrets.example.xcconfig` to `Config/LocalSecrets.xcconfig`.
 2. Fill in:
+   - `JADE_CUB_DEVELOPMENT_TEAM`
    - `SPARKLE_APPCAST_URL`
    - `SPARKLE_PUBLIC_ED_KEY`
 
@@ -87,6 +88,7 @@ If you want the full local release path including Sparkle appcast generation and
 
 ```xcconfig
 _XC_SLASH = /
+JADE_CUB_DEVELOPMENT_TEAM = YOURTEAMID
 SPARKLE_APPCAST_URL = https:$(_XC_SLASH)/github.com/<owner>/<repo>/releases/latest/download/appcast.xml
 SPARKLE_PUBLIC_ED_KEY = YOUR_PUBLIC_ED_KEY
 ```
@@ -99,7 +101,7 @@ SPARKLE_PUBLIC_ED_KEY = YOUR_PUBLIC_ED_KEY
 4. Store notarization credentials locally:
 
 ```bash
-xcrun notarytool store-credentials "PingIsland" \
+xcrun notarytool store-credentials "JadeCub" \
   --apple-id "your@email.com" \
   --team-id "YOURTEAMID" \
   --password "xxxx-xxxx-xxxx-xxxx"
@@ -115,8 +117,9 @@ xcrun notarytool store-credentials "PingIsland" \
 
 - `Config/LocalSecrets.xcconfig` is intentionally gitignored.
 - `scripts/package-release.sh` is the shared build + sign + notarize packaging entrypoint used by both local release tooling and GitHub Actions.
-- `scripts/create-styled-dmg.sh` now defaults to the repo-tracked installer artwork at `docs/images/ping-island-dmg-installer-background.png`; set `PING_ISLAND_DMG_BACKGROUND_SOURCE` if you need to preview a different background locally.
+- `scripts/create-styled-dmg.sh` now defaults to the repo-tracked installer artwork at `docs/images/jade-cub-dmg-installer-background.png`; set `JADE_CUB_DMG_BACKGROUND_SOURCE` if you need to preview a different background locally.
 - `scripts/package-release.sh` now compares the build against the latest earlier published GitHub release and fails if `CFBundleVersion` did not increase.
-- `scripts/create-release.sh` packages `releases/notes/<version>.md` as `PingIsland-<version>.md` and uses it as the GitHub Release body when present.
-- `scripts/create-release.sh` infers the GitHub repo from `origin` by default; set `PING_ISLAND_GITHUB_REPO=owner/repo` if you need to override it.
+- `scripts/create-release.sh` packages `releases/notes/<version>.md` as `JadeCub-<version>.md` and uses it as the GitHub Release body when present.
+- `scripts/create-release.sh` infers the GitHub repo from `origin` by default; set `JADE_CUB_GITHUB_REPO=owner/repo` if you need to override it.
+- Release scripts prefer the `JADE_CUB_*` environment variable prefix and still accept the historical `PING_ISLAND_*` prefix for compatibility with the upstream release tooling.
 - The app prefers Markdown release notes and falls back to Sparkle's explicit release notes links when Markdown is unavailable.

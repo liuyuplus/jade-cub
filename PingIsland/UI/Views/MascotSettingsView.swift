@@ -103,6 +103,12 @@ struct MascotSettingsView: View {
             )
 
             StatusRow(
+                status: .completed,
+                icon: "checkmark.circle.fill",
+                description: "会话刚完成、等待你查看时，宠物会切到已完成动作。"
+            )
+
+            StatusRow(
                 status: .warning,
                 icon: "exclamationmark.triangle.fill",
                 description: "审批、提问或等待人工介入时，宠物会切到警告状态动作。"
@@ -262,6 +268,8 @@ private struct StatusRow: View {
             return .blue
         case .working:
             return .green
+        case .completed:
+            return Color(red: 0.35, green: 0.82, blue: 0.45)
         case .warning:
             return .orange
         case .dragging:

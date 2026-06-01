@@ -30,7 +30,7 @@ protocol RuntimeCoordinating: Sendable {
 actor RuntimeCoordinator {
     static let shared = RuntimeCoordinator()
 
-    nonisolated private static let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "NativeRuntime")
+    nonisolated private static let logger = Logger(subsystem: "io.github.liuyuplus.jadecub", category: "NativeRuntime")
 
     private let registry: RuntimeSessionRegistry
     private var runtimes: [SessionProvider: any SessionRuntime] = [:]
