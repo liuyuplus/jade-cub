@@ -1,0 +1,56 @@
+name: Publish Unsigned Preview
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish-unsigned-preview.yml"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing prerelease tag to update
+        required: false
+        default: unsigned-1.0.0
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Build and upload unsigned preview
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || 'unsigned-1.0.0' }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build unsigned DMG and ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/package-unsigned.sh
+
+      - name: Upload preview assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          assets=(releases/unsigned/JadeCub-1.0.0-release-unsigned.dmg releases/unsigned/JadeCub-1.0.0-release-unsigned.zip)
+          for asset in "${assets[@]}"; do
+            if [ ! -f "$asset" ]; then
+              echo "::error::Missing expected preview asset: $asset"
+              exit 1
+            fi
+          done
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber

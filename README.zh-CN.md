@@ -14,11 +14,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/liuyuplus/jade-cub/releases/tag/v1.0.0">
-    <img src="https://img.shields.io/badge/Release-v1.0.0-16A34A?style=flat-square" alt="Jade Cub v1.0.0 正式版">
+  <a href="https://github.com/liuyuplus/jade-cub/releases/tag/unsigned-1.0.0">
+    <img src="https://img.shields.io/badge/Preview-unsigned--1.0.0-16A34A?style=flat-square" alt="未签名预览版">
   </a>
-  <a href="https://github.com/liuyuplus/jade-cub/releases/download/v1.0.0/JadeCub-1.0.0.dmg">
-    <img src="https://img.shields.io/badge/Download-DMG-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="下载 DMG">
+  <a href="https://github.com/liuyuplus/jade-cub/releases/download/unsigned-1.0.0/JadeCub-1.0.0-release-unsigned.dmg">
+    <img src="https://img.shields.io/badge/Download-DMG-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="下载未签名 DMG">
   </a>
   <img src="https://img.shields.io/badge/macOS-14%2B-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="macOS 14 或更高">
   <img src="https://img.shields.io/badge/Swift-6.1-FA7343?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.1">
@@ -92,12 +92,12 @@ Jade Cub 当前关注 Codex 和 Claude Code，同时保留多 Agent 兼容层：
 
 ## 安装
 
-1. 下载当前 [Jade Cub DMG](https://github.com/liuyuplus/jade-cub/releases/download/v1.0.0/JadeCub-1.0.0.dmg)，或打开 [Releases](https://github.com/liuyuplus/jade-cub/releases/tag/v1.0.0) 获取 ZIP。
+1. 下载当前 [未签名预览版 DMG](https://github.com/liuyuplus/jade-cub/releases/download/unsigned-1.0.0/JadeCub-1.0.0-release-unsigned.dmg)，或打开 [Releases](https://github.com/liuyuplus/jade-cub/releases/tag/unsigned-1.0.0) 获取 ZIP。
 2. 打开 DMG。
 3. 将 `Jade Cub.app` 拖到 Applications。
 4. 启动应用，并打开你希望 Jade Cub 监控的客户端。
 
-窗口聚焦功能可能需要辅助功能 / Apple Events 权限。
+当前预览包为 ad-hoc 签名且未做 Apple notarization。首次启动时，macOS 可能需要你在 Finder 中 Control-click / 右键选择 Open，或到 `System Settings -> Privacy & Security -> Open Anyway`。窗口聚焦功能还可能需要辅助功能 / Apple Events 权限。
 
 <a id="从源码构建"></a>
 ## 从源码构建
