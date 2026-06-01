@@ -73,7 +73,7 @@ struct NotchView: View {
 
     /// Whether any tracked session is currently processing or compacting
     private var isAnyProcessing: Bool {
-        sessionMonitor.instances.contains { isFreshProcessingSession($0) }
+        sessionMonitor.instances.contains { isClosedThinkingSession($0) }
     }
 
     /// Whether any tracked session has a pending permission request
@@ -96,7 +96,7 @@ struct NotchView: View {
     }
 
     private var activeSessions: [SessionState] {
-        sessionMonitor.instances.filter { isFreshProcessingSession($0) }
+        sessionMonitor.instances.filter { isClosedThinkingSession($0) }
     }
 
     private var countedClosedSessions: [SessionState] {
@@ -222,7 +222,7 @@ struct NotchView: View {
         }
 
         if let active = sessionMonitor.instances
-            .filter({ isFreshProcessingSession($0) })
+            .filter({ isClosedThinkingSession($0) })
             .sorted(by: { $0.lastActivity > $1.lastActivity })
             .first {
             return active
@@ -292,7 +292,7 @@ struct NotchView: View {
 
     private var representativeClosedPhaseForMascot: SessionPhase? {
         guard let representativeClosedSession else { return nil }
-        if isFreshProcessingSession(representativeClosedSession) {
+        if isClosedThinkingSession(representativeClosedSession) {
             return representativeClosedSession.phase
         }
         if representativeClosedSession.needsManualAttention {
@@ -1202,12 +1202,33 @@ struct NotchView: View {
 
     private func hasActiveCodingContent(in instances: [SessionState]) -> Bool {
         instances.contains { session in
-            isFreshProcessingSession(session)
+            isClosedThinkingSession(session)
         }
     }
 
     private func isClosedCountedSession(_ session: SessionState) -> Bool {
-        isFreshProcessingSession(session) || session.needsApprovalResponse || session.needsQuestionResponse
+        isClosedThinkingSession(session) || session.needsApprovalResponse || session.needsQuestionResponse
+    }
+
+    private func isClosedThinkingSession(_ session: SessionState, now: Date = Date()) -> Bool {
+        if isFreshProcessingSession(session, now: now) {
+            return true
+        }
+
+        guard session.provider == .codex, session.phase != .ended else {
+            return false
+        }
+
+        if session.phase.isActive {
+            return true
+        }
+
+        guard let message = session.compactHookMessage?.lowercased() else {
+            return false
+        }
+
+        return message.contains("正在思考")
+            || message.contains("thinking")
     }
 
     private func isFreshProcessingSession(_ session: SessionState, now: Date = Date()) -> Bool {
