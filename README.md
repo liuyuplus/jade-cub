@@ -3,7 +3,7 @@
   Jade Cub
 </h1>
 <p align="center">
-  <b>Dynamic Island-style AI coding session monitor for the macOS menu bar</b><br>
+  <b>Green-bear status island for Codex sessions, Obsidian tasks, and local file shelf</b><br>
   <a href="https://liuyuplus.github.io/jade-cub/">Website</a> •
   <a href="#installation">Install</a> •
   <a href="#features">Features</a> •
@@ -15,11 +15,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/liuyuplus/jade-cub/releases">
-    <img src="https://img.shields.io/github/v/release/liuyuplus/jade-cub?display_name=tag&style=flat-square" alt="Latest release">
+  <a href="https://github.com/liuyuplus/jade-cub/releases/tag/unsigned-1.0.0">
+    <img src="https://img.shields.io/badge/Preview-unsigned--1.0.0-16A34A?style=flat-square" alt="Unsigned preview release">
   </a>
-  <a href="https://github.com/liuyuplus/jade-cub/releases">
-    <img src="https://img.shields.io/github/downloads/liuyuplus/jade-cub/total?style=flat-square" alt="Release downloads">
+  <a href="https://github.com/liuyuplus/jade-cub/releases/download/unsigned-1.0.0/JadeCub-1.0.0-release-unsigned.dmg">
+    <img src="https://img.shields.io/badge/Download-DMG-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="Download unsigned DMG">
   </a>
   <img src="https://img.shields.io/badge/macOS-14%2B-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="macOS 14 or later">
   <img src="https://img.shields.io/badge/Swift-6.1-FA7343?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.1">
@@ -28,12 +28,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/notch-panel.png" width="480" alt="Jade Cub preview">
+  <img src="docs/images/jade-cub-status-island.png" width="720" alt="Jade Cub status island preview">
 </p>
 
 
 <p align="center">
-  <sub>Watch active coding sessions, answer follow-up questions, and jump back to the right terminal or IDE window.</sub>
+  <sub>Watch the green bear change state, keep today's Obsidian tasks visible, and drop files into a local shelf for later use.</sub>
 </p>
 
 <p align="center">
@@ -41,21 +41,25 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/mascots/claude.gif" width="36" alt="Claude mascot" title="Claude Code">&nbsp;
-  <img src="docs/images/mascots/codex.gif" width="36" alt="Codex mascot" title="Codex">&nbsp;
-  <img src="docs/images/mascots/gemini.gif" width="36" alt="Gemini CLI mascot" title="Gemini CLI">&nbsp;
-  <img src="docs/images/mascots/hermes.gif" width="36" alt="Hermes Agent mascot" title="Hermes Agent">&nbsp;
-  <img src="docs/images/mascots/qwen.gif" width="36" alt="Qwen Code mascot" title="Qwen Code">&nbsp;
-  <img src="docs/images/mascots/openclaw.gif" width="36" alt="OpenClaw mascot" title="OpenClaw">&nbsp;
-  <img src="docs/images/mascots/opencode.gif" width="36" alt="OpenCode mascot" title="OpenCode">&nbsp;
-  <img src="docs/images/mascots/cursor.gif" width="36" alt="Cursor mascot" title="Cursor">&nbsp;
-  <img src="docs/images/mascots/qoder.gif" width="36" alt="Qoder mascot" title="Qoder">&nbsp;
-  <img src="docs/images/mascots/codebuddy.gif" width="36" alt="CodeBuddy mascot" title="CodeBuddy">&nbsp;
-  <img src="docs/images/mascots/copilot.gif" width="36" alt="GitHub Copilot mascot" title="GitHub Copilot">
+  <img src="docs/images/bear-states/idle.png" width="42" alt="Idle green bear" title="Idle">&nbsp;
+  <img src="docs/images/bear-states/thinking.png" width="42" alt="Thinking green bear" title="Thinking">&nbsp;
+  <img src="docs/images/bear-states/waiting.png" width="42" alt="Waiting green bear" title="Waiting">&nbsp;
+  <img src="docs/images/bear-states/done.png" width="42" alt="Done green bear" title="Done">&nbsp;
+  <img src="docs/images/bear-states/failed.png" width="42" alt="Failed green bear" title="Failed">&nbsp;
+  <img src="docs/images/bear-states/sound.png" width="42" alt="Sound green bear" title="Sound">
 </p>
 <p align="center">
-  <sub>Claude Code · Codex · Gemini CLI · Hermes Agent · Qwen Code · OpenClaw · OpenCode · Cursor · Qoder · CodeBuddy · GitHub Copilot</sub>
+  <sub>Idle · Thinking · Waiting · Done · Failed · Sound</sub>
 </p>
+
+<a id="green-bear-notes-shelf"></a>
+## Green Bear, Notes, and Shelf
+
+Jade Cub is built around a small local workflow instead of a generic dashboard: the green bear shows session mood at a glance, Obsidian keeps today's tasks in the notch, and the Shelf lets you drop files into a local holding area while you work.
+
+- **Green bear states** - Idle, thinking, waiting, done, failed, and sound states make the app feel like one companion instead of a pile of badges.
+- **Obsidian daily-task progress** - Read today's Markdown checklist from your local vault and show completed / total progress without uploading notes.
+- **Drag-to-Shelf files** - Drop files into Jade Cub's local Shelf, select several, copy them back to the pasteboard, reveal them in Finder, or remove them when done.
 
 <a id="buddy-detach"></a>
 ## Floating Buddy
@@ -69,27 +73,23 @@ Jade Cub can detach the active Buddy from the notch. Press and hold the notch, d
 
 ## What is Jade Cub?
 
-Jade Cub is a macOS menu bar app that expands into a Dynamic Island-style surface when your coding agents need attention. It listens to Claude-style hooks, Codex hooks, Gemini CLI hooks, Hermes Agent plugin hooks, Qwen Code hooks, OpenClaw internal hooks plus session transcripts, the Codex app-server, OpenCode plugins, and compatible IDE integrations so approvals, input requests, completions, and session summaries show up without babysitting terminal tabs.
+Jade Cub is a Codex-first macOS status island for people who want their AI coding workflow to feel visible, local, and a little more alive. It stays quiet in the menu bar until something needs attention, then opens into a notch-style surface for green-bear state, Obsidian task progress, file staging, questions, approvals, summaries, and focus return.
 
-If you have seen [Vibe Island](https://vibeisland.app/), Jade Cub is positioned as an independent open-source alternative in the same category: a native macOS notch/menu bar surface for monitoring and controlling AI coding sessions.
+It still listens to Codex app-server sessions, Codex CLI hooks, Claude-style hooks, Gemini CLI hooks, Hermes Agent plugin hooks, Qwen Code hooks, OpenClaw hooks plus transcripts, OpenCode plugins, and compatible IDE integrations. Those integrations support the workflow, but the product center is Jade Cub's bear, notes, and shelf.
 
 ## Features
 
-Jade Cub focuses on the moments that actually interrupt coding flow, then keeps them visible and actionable from a native macOS notch surface.
+Jade Cub is shaped around the small local affordances that make daily agent work easier to follow.
 
-- **Attention-first UI** - Stay compact until a session needs approval, input, review, or intervention.
-- **Act from the notch** - Approve tools, deny requests, and answer follow-up prompts without hunting through tabs.
-- **Claude Code auto-approve** - Turn on per-session auto-approval when you want Claude Code to stop pausing on every permission request.
-- **One-click return** - Jump back to the right iTerm2, Ghostty, Terminal.app, tmux pane, or IDE window.
-- **Advanced bridge code retained** - Remote SSH and integration-management code remains in the project, but those controls are hidden from the default settings panel while Jade Cub stays Codex-first.
-- **Multi-agent coverage** - Track Claude Code, Codex, Gemini CLI, Hermes Agent, Qwen Code, OpenClaw, OpenCode, Cursor, Qoder, CodeBuddy, WorkBuddy, GitHub Copilot, and other compatible sessions in one place.
-- **OpenClaw gateway support** - Follow OpenClaw sessions from managed internal hooks, then refill the conversation from OpenClaw's local session transcripts so the Island UI can show the actual back-and-forth instead of a single inbound message.
-- **Codex hook + app-server sync** - Support Codex CLI hooks, live app-server threads, and rollout parsing fallback when needed.
-- **Custom sounds** - Pick per-event macOS sounds or import local sound packs for your own notification style.
-- **Custom agent mascots** - Give each client its own animated mascot override across the notch, session list, and hover UI.
-- **Floating Buddy** - Drag the active Buddy out of the notch so it can stay nearby as an independent floating companion.
-- **Hermes courier-fox mascot** - Hermes Agent uses a gold courier fox with a winged helmet and satchel so plugin-hook sessions stay visually distinct from the Claude/Qwen family.
-- **Qwen capybara mascot** - Qwen Code now ships with a mint-scarf capybara mascot tuned for prompt, reply, and notification-heavy flows.
+- **Green-bear status language** - A single mint bear carries idle, thinking, waiting, done, failed, and sound states across the closed island, open panel, and floating Buddy.
+- **Obsidian daily tasks** - Configure your vault, Daily directory, filename pattern, and optional template path; Jade Cub reads today's Markdown checklist locally and shows progress in the island.
+- **Local file Shelf** - Drag files into the island, copy selected files back to the pasteboard, reveal stored copies in Finder, and clear the shelf without involving a server.
+- **Ask and approve in place** - Answer follow-up questions, approve or deny tool requests, and review completion summaries without hunting through terminal tabs.
+- **One-click focus return** - Jump back to the right iTerm2, Ghostty, Terminal.app, tmux pane, Cursor, VS Code-compatible editor, or client window.
+- **Floating Buddy** - Drag the active Buddy out of the notch so the green bear can stay nearby as an independent companion.
+- **Local sounds** - Use macOS sounds, built-in 8-bit cues, or imported local sound packs for session events.
+- **Local-first privacy posture** - Jade Cub has no analytics or hosted backend by default; hooks, window metadata, optional notes, and transcripts stay on your Mac unless you connect external tools yourself.
+- **Advanced bridges kept out of the way** - Remote SSH and integration-management code remains available in the project, but the default settings UI stays focused on the everyday local workflow.
 
 <a id="supported-tools"></a>
 ## Supported Tools
@@ -98,25 +98,25 @@ Jade Cub also ships VS Code-compatible focus extensions for VS Code, Cursor, Cod
 
 Hermes Agent is integrated through a generated plugin directory at `~/.hermes/plugins/ping_island/`. Hermes' gateway hook directories under `~/.hermes/hooks/` do not run in the CLI, so Jade Cub uses the official `ctx.register_hook()` plugin surface to observe prompt submission, tool activity, model replies, and session end events.
 
-Qwen Code is supported as a first-class hook client through `~/.qwen/settings.json`, and its built-in mascot is the mint-scarf capybara shown in the README GIF strip. The visual is meant to feel calm and dependable, while still carrying a small Qwen-tinted scarf and reply bubble instead of another generic bird or blob.
+Qwen Code is supported as a first-class hook client through `~/.qwen/settings.json`, with its own calm mint-scarf mascot in the app's client identity system.
 
 OpenClaw is supported through a managed internal hook directory under `~/.openclaw/hooks/` plus transcript-aware session refresh from `~/.openclaw/agents/main/sessions/`. That combination lets Jade Cub surface OpenClaw's lightweight message hooks quickly, then backfill the full conversation from the local session log once the assistant reply lands.
 
 The underlying SSH bridge can still bootstrap onto a remote macOS or Linux host, rewrite compatible hook configs, and forward events back into the local menu-bar UI. The default settings panel intentionally keeps this advanced workflow out of sight for now.
 
-The mascot GIFs used throughout this README are generated from the live `MascotView` implementation via `./scripts/render-mascots.sh`.
+The green bear state images come from the app asset catalog. Additional client mascot previews can be regenerated from the live `MascotView` implementation with `./scripts/render-mascots.sh`.
 
 <a id="installation"></a>
 ## Installation
 
 ### Download a Release
 
-1. Visit the [official website](https://liuyuplus.github.io/jade-cub/) for the product overview and latest download link, or go straight to [Releases](https://github.com/liuyuplus/jade-cub/releases).
-2. Download the latest DMG.
+1. Download the current [unsigned preview DMG](https://github.com/liuyuplus/jade-cub/releases/download/unsigned-1.0.0/JadeCub-1.0.0-release-unsigned.dmg), or visit [Releases](https://github.com/liuyuplus/jade-cub/releases/tag/unsigned-1.0.0) for the ZIP as well.
+2. Open the DMG.
 3. Move `Jade Cub.app` into your Applications folder.
 4. Launch the app and start the clients you want Jade Cub to monitor.
 
-> On first launch, macOS may ask you to confirm the app or grant Accessibility / Apple Events permissions for focus features.
+> The current public build is unsigned and not notarized. On first launch, macOS may require Control-click -> Open or `System Settings -> Privacy & Security -> Open Anyway`. Jade Cub may also ask for Accessibility / Apple Events permissions for focus-return features.
 
 <a id="build-from-source"></a>
 ### Build from Source
