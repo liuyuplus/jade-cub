@@ -698,12 +698,6 @@ struct NotchView: View {
                     if viewModel.status != .opened && showsClosedLeadingIcon {
                         HStack(spacing: 7) {
                             ZStack(alignment: .leading) {
-                                if shouldShowClosedMusicNotes {
-                                    ClosedMusicNotesIndicator(size: petIconSize)
-                                        .offset(x: 2, y: -6)
-                                        .zIndex(0)
-                                }
-
                                 MascotView(
                                     kind: closedMascotKind,
                                     status: closedMascotStatus,
@@ -714,6 +708,15 @@ struct NotchView: View {
                                 .matchedGeometryEffect(id: "pet", in: activityNamespace, isSource: showsClosedLeadingIcon)
                                 .frame(width: sideWidth)
                                 .zIndex(1)
+
+                                if shouldShowClosedMusicNotes {
+                                    ClosedMusicNotesIndicator(size: petIconSize)
+                                        .offset(
+                                            x: petIconSize * 0.58,
+                                            y: -petIconSize * 0.18
+                                        )
+                                        .zIndex(2)
+                                }
 
                                 if closedActivityState != .idle {
                                     ClosedNotchStatusIndicator(state: closedActivityState, alignment: .leading)
@@ -727,7 +730,7 @@ struct NotchView: View {
                                 }
                             }
                             .frame(
-                                width: sideWidth + closedStatusIndicatorWidth,
+                                width: sideWidth + closedStatusIndicatorWidth + closedMusicIndicatorWidth,
                                 height: petIconSize,
                                 alignment: .leading
                             )
@@ -782,15 +785,13 @@ struct NotchView: View {
     }
 
     private var closedStatusIndicatorOverlayOffset: CGSize {
-        let physicalNotchShift: CGFloat = viewModel.hasPhysicalNotch ? -6 : 0
-
         switch closedActivityState {
         case .thinking:
-            return CGSize(width: petIconSize * 0.70 + physicalNotchShift, height: -petIconSize * 0.42)
+            return CGSize(width: petIconSize * 0.92, height: petIconSize * 0.02)
         case .finished:
-            return CGSize(width: petIconSize * 0.78 + physicalNotchShift, height: -petIconSize * 0.28)
+            return CGSize(width: petIconSize * 0.86, height: -petIconSize * 0.10)
         case .approval, .question:
-            return CGSize(width: petIconSize * 0.74 + physicalNotchShift, height: -petIconSize * 0.26)
+            return CGSize(width: petIconSize * 0.84, height: -petIconSize * 0.08)
         case .idle:
             return .zero
         }
@@ -801,7 +802,11 @@ struct NotchView: View {
     }
 
     private var closedLeadingWidth: CGFloat {
-        sideWidth + closedStatusIndicatorWidth
+        sideWidth + closedStatusIndicatorWidth + closedMusicIndicatorWidth
+    }
+
+    private var closedMusicIndicatorWidth: CGFloat {
+        shouldShowClosedMusicNotes ? petIconSize * 0.82 : 0
     }
 
     private var closedTrailingWidth: CGFloat {
